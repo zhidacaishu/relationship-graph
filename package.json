@@ -1,0 +1,23 @@
+{
+  "name": "atlas-graph-prototype",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --mode weighted",
+    "build": "vite build --mode weighted",
+    "preview": "vite preview --host 127.0.0.1 --mode weighted",
+    "dev:weighted": "vite --host 127.0.0.1 --mode weighted",
+    "build:weighted": "vite build --mode weighted",
+    "preview:weighted": "vite preview --host 127.0.0.1 --mode weighted",
+    "dev:unweighted": "vite --host 127.0.0.1 --mode unweighted-obsidian",
+    "build:unweighted": "vite build --mode unweighted-obsidian",
+    "preview:unweighted": "vite preview --host 127.0.0.1 --mode unweighted-obsidian"
+  },
+  "dependencies": {
+    "pixi.js": "8.16.0"
+  },
+  "devDependencies": {
+    "vite": "7.1.7"
+  }
+}
