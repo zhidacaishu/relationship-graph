@@ -1,38 +1,53 @@
 # Atlas Graph Prototype
 
-一个受 Obsidian Graph View 启发的交互式知识图谱前端原型。项目当前以**加权文献图谱**为主：使用预计算的模拟数据，在浏览器中展示全局/局部关系、分组过滤、时间演化和可调力导布局。
+一个受 Obsidian Graph View 启发的浏览器端交互式知识图谱原型。仓库提供两个独立版本：用于展示关系强弱的**加权文献图谱**，以及将所有关系视为等价连接的**无权重 Vault 图谱**。
 
 ![Atlas Graph 界面预览](./atlas-graph-preview.png)
 
-## 项目简介
+## 两个版本
 
-Atlas Graph 用于探索较大规模知识网络在桌面端界面中的展示与交互方式。默认示例包含 300 个文献节点和 1,032 条加权边，主题覆盖表示学习、图神经网络、因果推断、知识图谱等方向。
+| 子项目 | 默认数据 | 边的含义 | 开发命令 |
+| --- | --- | --- | --- |
+| `apps/weighted` | 300 个模拟文献节点、1,032 条相似度边 | 相似度影响弹簧距离、弹簧强度和边的基础视觉 | `npm run dev` 或 `npm run dev:weighted` |
+| `apps/unweighted-obsidian` | 167 篇模拟 Vault 笔记及其标签、附件和未解析引用 | 每条关系使用相同的基础弹簧公式、距离和线条样式 | `npm run dev:unweighted` |
 
-项目完全运行在浏览器中：
+两个版本都完全运行在浏览器中，不需要后端或数据库，也不会读取或修改真实 Obsidian Vault。
 
-- 无后端服务和数据库；
-- 不读取或修改真实 Obsidian Vault；
-- 图谱数据由 `apps/weighted/graph-data.js` 预先注入；
-- “打开笔记”等操作目前仅模拟界面反馈；界面提供复制 Obsidian 链接的入口，实际写入剪贴板取决于浏览器权限和运行环境。
+## 功能
 
-## 功能亮点
+两个版本共享以下交互能力：
 
-- **全局与局部图谱**：查看完整关系网络，或从任意节点展开指定深度的邻域。
-- **加权力导布局**：边的相似度会影响弹簧强度和目标距离。
-- **丰富的图谱交互**：支持节点选择、拖拽、固定、画布平移、缩放、聚焦和右键菜单。
-- **搜索与组合过滤**：可按名称、主题、路径、节点类型和年份筛选。
-- **自定义分组着色**：使用查询表达式创建或修改节点分组。
-- **多种节点类型**：可切换显示标签、附件、未解析链接和孤立节点。
-- **创建时间动画**：按节点年份依次展示知识网络的演化过程。
-- **实时参数调节**：可调整节点大小、边宽、箭头、文字淡出阈值，以及中心力、斥力、连边力和连边距离。
-- **面向较大图谱的渲染架构**：PixiJS 负责图形渲染，Web Worker 负责布局计算，并使用四叉树与 Barnes–Hut 近似优化斥力计算。
-- **渐进式兼容**：当前优先使用 PixiJS 的 WebGL 渲染；初始化失败时回退到 Canvas 2D。支持跨源隔离时使用 `SharedArrayBuffer`，否则自动切换为消息传输模式。
+- Global 与 Local 图谱，以及 1–5 层局部邻域展开；
+- 节点悬停、选择、拖拽、固定、双击和右键菜单；
+- 画布平移、指针中心缩放、自动适配和节点聚焦；
+- 快速搜索、组合过滤和可编辑分组着色；
+- 标签、附件、未解析链接和孤立节点显示控制；
+- 节点大小、边宽、箭头、标签阈值和力导参数实时调节；
+- PixiJS 图形渲染与 Canvas 2D 回退；
+- Web Worker 力导布局、四叉树空间索引、Barnes–Hut 斥力近似和碰撞投影；
+- 跨源隔离环境下的 `SharedArrayBuffer` 快路径，以及普通环境下的 Transfer 模式。
+
+### 加权版本
+
+加权版本模拟文献相似度网络。每条边的 `similarity` 会影响目标距离、弹簧强度和基础强调程度，并提供按创建年份播放的时间演化动画。
+
+### 无权重版本
+
+无权重版本模拟 Obsidian Vault：
+
+- 所有可见关系在布局中使用同一目标距离和弹簧强度；
+- 所有普通关系使用同一基础颜色、透明度和粗细；
+- 边的视觉差异只来自悬停、选择、搜索或局部上下文；
+- 笔记半径由 degree 和节点类型决定，不使用边权；
+- 默认颜色组来自 Vault 顶层文件夹；
+- tag、attachment、unresolved 和 orphan 使用固定系统色与不同节点形状；
+- 标签、附件和未解析节点从笔记元数据推导，孤立笔记由基础 wiki 图中的 degree 0 自动识别。
 
 ## 技术栈
 
-- 原生 HTML、CSS、JavaScript（ES Modules）
-- [PixiJS](https://pixijs.com/) 8.16.0
-- [Vite](https://vite.dev/) 7.1.7
+- 原生 HTML、CSS、JavaScript ES Modules
+- PixiJS 8.16.0
+- Vite 7.1.7
 - Web Worker
 - 自研四叉树、Barnes–Hut 力计算与碰撞处理
 
@@ -40,48 +55,51 @@ Atlas Graph 用于探索较大规模知识网络在桌面端界面中的展示�
 
 ### 环境要求
 
-Vite 7 要求以下 Node.js 版本之一：
+Vite 7 要求 Node.js `20.19+` 或 `22.12+`，同时需要 npm。
 
-- Node.js `20.19+`
-- Node.js `22.12+`
-
-同时需要 npm。
-
-### 安装与运行
+### 安装依赖
 
 ```bash
 npm install
-npm run dev
 ```
 
-开发服务器启动后，请打开终端中 Vite 输出的本地地址。服务仅监听 `127.0.0.1`。
-
-### 构建与预览
+### 开发
 
 ```bash
-npm run build
-npm run preview
+# 默认：加权版本
+npm run dev
+
+# 显式启动加权版本
+npm run dev:weighted
+
+# 启动无权重 Vault 版本
+npm run dev:unweighted
 ```
 
-加权图谱的构建产物位于：
+开发服务器仅监听 `127.0.0.1`。请打开终端中 Vite 输出的本地地址。
+
+### 构建
+
+```bash
+npm run build:weighted
+npm run build:unweighted
+```
+
+构建产物分别位于：
 
 ```text
 apps/weighted/dist/
+apps/unweighted-obsidian/dist/
 ```
 
-## 可用子项目
+构建配置会把当前应用的 `graph-data.js` 复制到对应 `dist/`。
 
-| 子项目 | 状态 | 开发命令 | 说明 |
-| --- | --- | --- | --- |
-| `apps/weighted` | 可用，默认入口 | `npm run dev` 或 `npm run dev:weighted` | 加权 Obsidian 风格知识图谱 |
-| `apps/unweighted-obsidian` | 预留 | `npm run dev:unweighted` | 当前只有占位页面，图谱功能尚未实现 |
+### 预览
 
-对应构建和预览命令：
-
-| 操作 | 加权图谱 | 无权重占位项目 |
-| --- | --- | --- |
-| 构建 | `npm run build:weighted` | `npm run build:unweighted` |
-| 预览 | `npm run preview:weighted` | `npm run preview:unweighted` |
+```bash
+npm run preview:weighted
+npm run preview:unweighted
+```
 
 ## 使用说明
 
@@ -90,12 +108,12 @@ apps/weighted/dist/
 | 操作 | 效果 |
 | --- | --- |
 | 单击节点 | 选中节点并打开详情卡 |
-| 拖拽节点 | 调整节点位置；固定节点会在释放后保持位置 |
+| 拖拽节点 | 调整节点位置；固定节点在释放后保持位置 |
 | 拖拽空白区域 | 平移画布 |
 | 滚轮 | 以指针位置为中心缩放 |
-| 双击节点 | 以该节点打开局部图谱 |
+| 双击节点 | 以该节点打开 Local graph |
 | 双击空白区域 | 自动适配当前图谱 |
-| 右键节点 | 打开操作菜单，可查看、进入局部图、固定或复制 `[[Obsidian Link]]` |
+| 右键节点 | 打开操作菜单，可模拟打开笔记、进入局部图、固定或复制 `[[Obsidian Link]]` |
 
 ### 键盘快捷键
 
@@ -106,44 +124,89 @@ apps/weighted/dist/
 | `Esc` | 关闭搜索、右键菜单或清除选择 |
 | `+` / `-` | 放大 / 缩小 |
 | `0` | 适配当前图谱 |
-| `Space` | 播放或暂停创建时间动画 |
 | 方向键 | 平移画布 |
 | `Shift + 方向键` | 快速平移画布 |
+| `Space` | 仅加权版本：播放或暂停创建时间动画 |
 
 ### 控制面板
 
-控制面板分为四组：
-
-1. **Filters**：搜索节点，切换标签、附件、未解析节点和孤立节点；局部模式下还可在 1–5 层之间调整邻域展开深度。
-2. **Groups**：启用、停用或修改分组查询，也可添加自定义颜色组。
-3. **Display**：控制箭头、文字显示、节点大小、边粗细和时间动画。
+1. **Filters**：过滤节点，切换 tags、attachments、existing files 和 orphans；Local 模式下可调整邻域深度。
+2. **Groups**：启用、停用或编辑颜色组，也可添加自定义查询组。
+3. **Display**：控制箭头、标签阈值、节点大小和边粗细；加权版本还提供时间动画。
 4. **Forces**：实时调节中心力、斥力、连边力和连边距离。
+
+无权重版本中的 **Existing files only** 默认开启；关闭后才会显示由 `unresolved[]` 推导的未解析引用节点。
 
 ## 查询语法
 
-过滤器和自定义分组支持以下字段：
+多个条件采用 AND 关系；字段值包含空格时可使用双引号；在任意条件前添加 `-` 可排除匹配项。
+
+### 无权重 Vault 版本
 
 | 语法 | 示例 | 含义 |
 | --- | --- | --- |
-| 普通文本 | `graph` | 匹配名称、主题、路径或类型中包含该文本的节点 |
-| `topic:` | `topic:"Knowledge Graph"` | 按主题匹配 |
-| `path:` | `path:Papers` | 按模拟文件路径匹配 |
+| 普通文本 | `atlas` | 匹配名称、别名、路径、文件夹、标签或类型 |
+| `path:` | `path:"03 Projects"` | 按路径包含关系匹配 |
+| `folder:` | `folder:"03 Projects"` | 按文件夹匹配 |
+| `tag:` | `tag:review` | 按标签匹配 |
 | `type:` | `type:note` | 按节点类型匹配 |
-| `year:` | `year:2024` | 按年份精确匹配 |
-| `-` 前缀 | `-type:attachment` | 排除匹配项 |
-| 多个条件 | `topic:"Knowledge Graph" year:2024` | 所有条件同时满足 |
+| `is:` | `is:orphan` | 匹配 orphan、attachment 或 unresolved |
+| 排除 | `tag:project -tag:archive` | 保留项目标签并排除归档标签 |
 
-可用节点类型包括：
+可用类型包括 `note`、`tag`、`attachment`、`unresolved` 和 `orphan`。
 
-- `note`
-- `tag`
-- `attachment`
-- `unresolved`
-- `orphan`
+### 加权文献版本
 
-## 自定义图谱数据
+加权版本保留 `topic:`、`path:`、`type:`、`year:` 和 `-` 排除语法，例如：
 
-默认数据位于 `apps/weighted/graph-data.js`，并必须通过名为 `window.PRECOMPUTED_GRAPH_DATA` 的全局变量在 `app.js` 加载前提供给应用：
+```text
+topic:"Knowledge Graph" year:2024 -type:attachment
+```
+
+## 图谱数据
+
+两个页面都要求在 `app.js` 之前加载本目录的 `graph-data.js`。数据文件通过 `window.PRECOMPUTED_GRAPH_DATA` 注入，便于替换为其他预计算数据。
+
+### 无权重 Vault schema
+
+```js
+window.PRECOMPUTED_GRAPH_DATA = {
+  meta: {
+    vaultName: "Atlas Vault",
+    description: "Unweighted Vault graph"
+  },
+  nodes: [
+    {
+      id: "note:project-atlas-brief",
+      name: "Project Atlas Brief",
+      path: "03 Projects/Project Atlas Brief.md",
+      folder: "03 Projects",
+      tags: ["project", "atlas"],
+      aliases: ["Atlas brief"],
+      attachments: ["atlas-map.canvas"],
+      unresolved: ["Atlas follow up"]
+    }
+  ],
+  links: [
+    {
+      source: "note:project-atlas-brief",
+      target: "note:project-atlas-architecture",
+      type: "wiki"
+    }
+  ]
+};
+```
+
+约束：
+
+- `nodes[].id` 必须唯一；
+- `links[].source` 和 `links[].target` 必须引用已存在的基础笔记 ID；
+- 边不包含 `weight` 或 `similarity`；
+- `tags`、`aliases`、`attachments` 和 `unresolved` 均为可选字符串数组；
+- 附件与未解析引用会在运行时转换为独立节点及关系；
+- 基础 wiki links 中 degree 为 0 的笔记会被标记为 orphan。
+
+### 加权文献 schema
 
 ```js
 window.PRECOMPUTED_GRAPH_DATA = {
@@ -155,14 +218,6 @@ window.PRECOMPUTED_GRAPH_DATA = {
       group: 0,
       topic: "Knowledge Graph",
       val: 42,
-      degree: 1
-    },
-    {
-      id: "paper-2",
-      name: "Another Paper (2023)",
-      group: 0,
-      topic: "Knowledge Graph",
-      val: 28,
       degree: 1
     }
   ],
@@ -176,23 +231,7 @@ window.PRECOMPUTED_GRAPH_DATA = {
 };
 ```
 
-字段说明：
-
-| 字段 | 说明 |
-| --- | --- |
-| `topics` | 主题列表；节点的 `group` 应对应主题索引 |
-| `nodes[].id` | 唯一节点 ID |
-| `nodes[].name` | 显示名称；末尾的 `(YYYY)` 会被解析为创建年份，缺失时按 2020 处理 |
-| `nodes[].group` | 主题索引 |
-| `nodes[].topic` | 主题名称 |
-| `nodes[].val` | 搜索结果排序和节点权重相关数值 |
-| `nodes[].degree` | 节点度数，用于计算初始半径 |
-| `links[].source` / `target` | 起点和终点 ID；也可使用 `sourceId` / `targetId` |
-| `links[].similarity` | 边权，影响力导布局；缺失时使用默认值 |
-
-修改数据后重新运行开发服务器或构建即可。构建加权项目时，Vite 配置会把 `graph-data.js` 复制到 `apps/weighted/dist/`。
-
-> 标签、附件、未解析链接和孤立节点目前由 `app.js` 基于基础节点生成，用于演示过滤和视觉编码；它们并非来自真实 Vault。
+加权版本使用 `similarity` 表达边权，并使用 `topic`、`val`、`degree` 和名称中的年份组织分组、节点重要性与时间动画。
 
 ## 项目结构
 
@@ -200,45 +239,50 @@ window.PRECOMPUTED_GRAPH_DATA = {
 .
 ├─ apps/
 │  ├─ weighted/
-│  │  ├─ index.html            # 主界面和控制面板结构
-│  │  ├─ styles.css            # Obsidian 风格界面样式
-│  │  ├─ app.js                # 状态、过滤、交互和布局通信
-│  │  ├─ graph-renderer.js     # PixiJS 图谱渲染器
-│  │  ├─ graph-worker.js       # Worker 力导布局与碰撞计算
-│  │  ├─ graph-quadtree.js     # 四叉树及空间查询
-│  │  ├─ graph-data.js         # 预计算模拟图谱数据
-│  │  └─ dist/                 # 构建后生成（Git 忽略）
+│  │  ├─ index.html
+│  │  ├─ styles.css
+│  │  ├─ app.js
+│  │  ├─ graph-renderer.js
+│  │  ├─ graph-worker.js
+│  │  ├─ graph-quadtree.js
+│  │  └─ graph-data.js
 │  └─ unweighted-obsidian/
-│     └─ index.html            # 无权重版本占位页
-├─ atlas-graph-preview.png      # README 界面预览
-├─ README.md                    # 项目说明
-├─ .gitignore                   # 本地生成物与临时文件规则
-├─ package.json                 # 脚本和依赖
+│     ├─ index.html
+│     ├─ styles.css
+│     ├─ app.js
+│     ├─ graph-renderer.js
+│     ├─ graph-worker.js
+│     ├─ graph-quadtree.js
+│     └─ graph-data.js
+├─ atlas-graph-preview.png
+├─ package.json
 ├─ package-lock.json
-└─ vite.config.js               # 多入口、构建和跨源隔离配置
+├─ README.md
+└─ vite.config.js
 ```
 
 ## 渲染与布局架构
 
 1. `graph-data.js` 在页面加载时写入预计算数据。
-2. `app.js` 构建可见节点和边，并根据模式、过滤条件与开关生成当前图谱。
-3. `graph-worker.js` 在独立线程中计算中心力、斥力、连边力和碰撞约束。
-4. 支持跨源隔离时，主线程和 Worker 通过 `SharedArrayBuffer` 共享位置数据；否则通过可转移数组传递快照。
-5. `graph-renderer.js` 使用 PixiJS 绘制节点、边、箭头和标签；初始化失败时由 `app.js` 使用 Canvas 2D 渲染。
+2. `app.js` 归一化节点，推导可选实体，并根据模式、查询和开关构建当前可见图。
+3. `graph-worker.js` 在独立线程中计算中心力、斥力、连边弹簧和碰撞约束。
+4. 支持跨源隔离时，主线程与 Worker 通过 `SharedArrayBuffer` 共享位置；否则通过可转移数组传递快照。
+5. `graph-renderer.js` 使用 PixiJS 绘制节点、边、箭头和标签；初始化失败时由 `app.js` 使用 Canvas 2D 回退渲染。
 
-开发和预览服务器已设置以下响应头，以启用共享内存快路径：
+开发和预览服务器已设置：
 
 ```text
 Cross-Origin-Opener-Policy: same-origin
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
-部署静态构建产物时，如需继续使用 `SharedArrayBuffer` 模式，也应在托管平台配置这两个响应头；未配置时应用仍会回退到 Transfer 模式。
+部署静态产物时，如需继续使用 `SharedArrayBuffer`，托管平台也应提供这两个响应头；否则应用会自动使用 Transfer 模式。
 
 ## 当前边界
 
-- 这是界面与图谱交互原型，不是 Obsidian 插件。
-- 数据为预计算的模拟文献网络，不连接真实文件系统。
-- 无权重图谱尚未实现。
-- 当前没有自动化测试脚本、后端服务或持久化配置。
-- 仓库当前未提供许可证文件；在明确授权前，请勿默认将代码视为可自由再分发。
+- 这是界面与图谱交互原型，不是 Obsidian 插件；
+- 数据为确定性的模拟数据，不连接真实文件系统；
+- “打开笔记”只提供界面反馈，复制链接受浏览器剪贴板权限限制；
+- 配置、节点位置和固定状态不会持久化；
+- 当前没有自动化测试脚本、后端服务或数据库；
+- 仓库未提供许可证文件，在明确授权前请勿默认代码可自由再分发。

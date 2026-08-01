@@ -5,61 +5,209 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239b84df' stroke-width='1.6'%3E%3Ccircle cx='5' cy='12' r='2.5'/%3E%3Ccircle cx='15' cy='5' r='2.5'/%3E%3Ccircle cx='19' cy='17' r='2.5'/%3E%3Cpath d='m7.1 10.5 5.8-4M7.4 12.7l9.2 3.5M16.2 7.3l1.7 7.3'/%3E%3C/svg%3E">
-  <title>Obsidian Graph — Unweighted</title>
-  <style>
-    :root {
-      font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
-      color: #d7d3dc;
-      background: #1e1e1e;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      min-height: 100vh;
-      margin: 0;
-      display: grid;
-      place-items: center;
-      background: #1e1e1e;
-    }
-
-    main {
-      width: min(520px, calc(100vw - 48px));
-      padding: 36px;
-      border: 1px solid #3a383d;
-      border-radius: 12px;
-      background: #252427;
-      box-shadow: 0 18px 50px rgb(0 0 0 / 24%);
-    }
-
-    small {
-      color: #9b84df;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-    }
-
-    h1 {
-      margin: 12px 0 10px;
-      font-size: 24px;
-      font-weight: 600;
-    }
-
-    p {
-      margin: 0;
-      color: #aaa6ad;
-      line-height: 1.65;
-    }
-  </style>
+  <title>Atlas Vault — Unweighted Graph</title>
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <main>
-    <small>Reserved project</small>
-    <h1>无权重 Obsidian 风格图谱</h1>
-    <p>该子项目已预留，图谱实现尚未开始。当前可运行的加权图谱位于 apps/weighted。</p>
-  </main>
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="i-vault" viewBox="0 0 24 24"><path d="M12 2 5.3 5.7 3 16.1 9.2 22l9.6-4.4L21 8.1 16.7 3 12 2Z"/><path d="m5.3 5.7 5.2 3.1L16.7 3M10.5 8.8 9.2 22m1.3-13.2 8.3 8.8M16.7 3l2.1 14.6"/></symbol>
+    <symbol id="i-files" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-graph" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.5"/><circle cx="15" cy="5" r="2.5"/><circle cx="19" cy="17" r="2.5"/><path d="m7.1 10.5 5.8-4M7.4 12.7l9.2 3.5M16.2 7.3l1.7 7.3"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.1-1.1"/></symbol>
+    <symbol id="i-command" viewBox="0 0 24 24"><path d="M18 9a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3Z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 3.4 2.2c-.8.4-1.1 1-1.1 1.8M12 17h.01"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-focus" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="m12 17-5 5M5 3l7 7M14 2l8 8-4 1-5 5-5-5 5-5Z"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <header class="titlebar">
+      <div class="titlebar-vault">
+        <svg class="vault-mark"><use href="#i-vault"/></svg>
+        <span>Atlas Vault</span>
+        <small>UNWEIGHTED</small>
+        <button class="bare-button title-chevron" aria-label="Vault options"><svg><use href="#i-chevron"/></svg></button>
+      </div>
+      <div class="workspace-tabs" role="tablist">
+        <button class="workspace-tab" role="tab" aria-selected="false"><svg><use href="#i-files"/></svg><span>Vault Index</span><svg class="tab-close"><use href="#i-x"/></svg></button>
+        <button class="workspace-tab is-active" role="tab" aria-selected="true"><svg><use href="#i-graph"/></svg><span>Graph view</span><svg class="tab-close"><use href="#i-x"/></svg></button>
+        <button class="new-tab bare-button" aria-label="New tab"><svg><use href="#i-plus"/></svg></button>
+      </div>
+      <div class="window-actions" aria-hidden="true"><span></span><span class="window-square"></span><span class="window-close">×</span></div>
+    </header>
+
+    <aside class="ribbon" aria-label="Workspace ribbon">
+      <div class="ribbon-top">
+        <button class="ribbon-button" aria-label="File explorer" data-tip="File explorer"><svg><use href="#i-files"/></svg></button>
+        <button class="ribbon-button" aria-label="Search" data-tip="Search"><svg><use href="#i-search"/></svg></button>
+        <button class="ribbon-button is-active" aria-label="Graph view" data-tip="Graph view"><svg><use href="#i-graph"/></svg></button>
+        <button class="ribbon-button" aria-label="Backlinks" data-tip="Backlinks"><svg><use href="#i-link"/></svg></button>
+        <button class="ribbon-button" aria-label="Command palette" data-tip="Command palette"><svg><use href="#i-command"/></svg></button>
+      </div>
+      <div class="ribbon-bottom">
+        <button class="ribbon-button" aria-label="Help" data-tip="Help"><svg><use href="#i-help"/></svg></button>
+        <button class="ribbon-button" aria-label="Settings" data-tip="Graph controls"><svg><use href="#i-settings"/></svg></button>
+      </div>
+    </aside>
+
+    <main class="graph-workspace">
+      <canvas id="graph-canvas" aria-label="Interactive unweighted knowledge graph"></canvas>
+      <div class="canvas-vignette" aria-hidden="true"></div>
+
+      <section class="graph-heading" aria-label="Graph mode and search">
+        <div class="view-name"><svg><use href="#i-graph"/></svg><span id="view-title">Graph view</span></div>
+        <div class="mode-switch" role="group" aria-label="Graph scope">
+          <button class="mode-button is-active" data-mode="global">Global</button>
+          <button class="mode-button" data-mode="local">Local</button>
+        </div>
+        <label class="floating-search">
+          <svg><use href="#i-search"/></svg>
+          <input id="quick-search" type="search" autocomplete="off" spellcheck="false" placeholder="Search the vault…">
+          <kbd>⌘ F</kbd>
+        </label>
+      </section>
+
+      <button id="panel-toggle" class="panel-toggle icon-button" aria-label="Toggle graph controls" aria-expanded="true"><svg><use href="#i-panel"/></svg></button>
+
+      <aside id="control-panel" class="control-panel" aria-label="Graph controls">
+        <div class="panel-header">
+          <div><span class="eyebrow">UNWEIGHTED GRAPH</span><strong>Graph controls</strong></div>
+          <button id="panel-close" class="icon-button" aria-label="Close controls"><svg><use href="#i-x"/></svg></button>
+        </div>
+
+        <section class="control-section is-open">
+          <button class="section-heading" aria-expanded="true"><span>Filters</span><svg><use href="#i-chevron"/></svg></button>
+          <div class="section-content">
+            <label class="field-label" for="filter-search">Search files</label>
+            <div class="panel-search"><svg><use href="#i-search"/></svg><input id="filter-search" type="search" autocomplete="off" placeholder="tag:idea  folder:&quot;03 Projects&quot;"></div>
+            <p class="query-hint">Use path:, folder:, tag:, type:, is: and -exclude.</p>
+            <div class="toggle-list">
+              <label class="toggle-row"><span>Tags</span><input id="toggle-tags" type="checkbox"><i></i></label>
+              <label class="toggle-row"><span>Attachments</span><input id="toggle-attachments" type="checkbox"><i></i></label>
+              <label class="toggle-row"><span>Existing files only</span><input id="toggle-existing" type="checkbox" checked><i></i></label>
+              <label class="toggle-row"><span>Orphans</span><input id="toggle-orphans" type="checkbox"><i></i></label>
+            </div>
+            <div id="local-depth-row" class="range-row local-only" hidden>
+              <div class="range-copy"><span>Depth</span><output id="depth-value">2</output></div>
+              <input id="local-depth" type="range" min="1" max="5" step="1" value="2">
+            </div>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <button class="section-heading" aria-expanded="false"><span>Groups</span><svg><use href="#i-chevron"/></svg></button>
+          <div class="section-content">
+            <div id="group-list" class="group-list"></div>
+            <button id="add-group" class="text-button"><svg><use href="#i-plus"/></svg>Add group</button>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <button class="section-heading" aria-expanded="false"><span>Display</span><svg><use href="#i-chevron"/></svg></button>
+          <div class="section-content">
+            <div class="edge-note"><i></i><span>Every relationship uses the same base force and line style.</span></div>
+            <label class="toggle-row single"><span>Arrows</span><input id="toggle-arrows" type="checkbox"><i></i></label>
+            <div class="range-row">
+              <div class="range-copy"><span>Text fade threshold</span><output id="fade-value">0.55</output></div>
+              <input id="text-fade" type="range" min="0" max="1" step="0.05" value="0.55">
+            </div>
+            <div class="range-row">
+              <div class="range-copy"><span>Node size</span><output id="node-size-value">1.00</output></div>
+              <input id="node-size" type="range" min="0.5" max="2" step="0.05" value="1">
+            </div>
+            <div class="range-row">
+              <div class="range-copy"><span>Link thickness</span><output id="link-thickness-value">0.90</output></div>
+              <input id="link-thickness" type="range" min="0.25" max="3" step="0.05" value="0.9">
+            </div>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <button class="section-heading" aria-expanded="false"><span>Forces</span><svg><use href="#i-chevron"/></svg></button>
+          <div class="section-content">
+            <div class="range-row">
+              <div class="range-copy"><span>Center force</span><output id="center-value">0.28</output></div>
+              <input id="center-force" type="range" min="0" max="1" step="0.01" value="0.28">
+            </div>
+            <div class="range-row">
+              <div class="range-copy"><span>Repel force</span><output id="repel-value">9.5</output></div>
+              <input id="repel-force" type="range" min="0" max="20" step="0.5" value="9.5">
+            </div>
+            <div class="range-row">
+              <div class="range-copy"><span>Link force</span><output id="link-force-value">0.82</output></div>
+              <input id="link-force" type="range" min="0" max="2" step="0.01" value="0.82">
+            </div>
+            <div class="range-row">
+              <div class="range-copy"><span>Link distance</span><output id="link-distance-value">72</output></div>
+              <input id="link-distance" type="range" min="30" max="160" step="2" value="72">
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <section id="node-card" class="node-card" aria-live="polite" hidden>
+        <div class="node-card-top"><span id="node-type" class="node-type">NOTE</span><button id="node-card-close" class="icon-button" aria-label="Close details"><svg><use href="#i-x"/></svg></button></div>
+        <h2 id="node-title"></h2>
+        <div id="node-path" class="node-path"></div>
+        <div class="node-context">
+          <div><span>Folder</span><strong id="node-folder">—</strong></div>
+          <div><span>Tags</span><p id="node-tags">No tags</p></div>
+        </div>
+        <div class="node-metrics">
+          <div><strong id="node-links">0</strong><span>links</span></div>
+          <div><strong id="node-backlinks">0</strong><span>backlinks</span></div>
+          <div><strong id="node-tag-count">0</strong><span>tags</span></div>
+        </div>
+        <div class="node-card-actions">
+          <button id="open-local"><svg><use href="#i-graph"/></svg>Local graph</button>
+          <button id="pin-node"><svg><use href="#i-pin"/></svg><span>Pin</span></button>
+        </div>
+      </section>
+
+      <div id="hover-label" class="hover-label" hidden></div>
+      <div id="context-menu" class="context-menu" hidden>
+        <button data-action="open"><svg><use href="#i-files"/></svg>Open note</button>
+        <button data-action="local"><svg><use href="#i-graph"/></svg>Open local graph</button>
+        <button data-action="pin"><svg><use href="#i-pin"/></svg><span>Pin node</span></button>
+        <div class="menu-divider"></div>
+        <button data-action="copy"><svg><use href="#i-copy"/></svg>Copy Obsidian link</button>
+      </div>
+
+      <div class="canvas-toolbar" aria-label="Canvas controls">
+        <button id="zoom-out" class="icon-button" aria-label="Zoom out"><svg><use href="#i-minus"/></svg></button>
+        <button id="zoom-level" class="zoom-level" aria-label="Reset zoom">100%</button>
+        <button id="zoom-in" class="icon-button" aria-label="Zoom in"><svg><use href="#i-plus"/></svg></button>
+        <span></span>
+        <button id="fit-graph" class="icon-button" aria-label="Fit graph"><svg><use href="#i-focus"/></svg></button>
+      </div>
+
+      <div class="graph-status">
+        <span class="status-pulse"></span>
+        <span id="worker-status">Layout active</span>
+        <i></i>
+        <span id="graph-count">Loading graph…</span>
+      </div>
+
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+      <div id="loading-screen" class="loading-screen">
+        <div class="loading-gem"><svg><use href="#i-vault"/></svg><i></i></div>
+        <strong>Opening Atlas Vault</strong>
+        <span id="loading-status">Resolving unweighted links…</span>
+        <div class="loading-bar"><i></i></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="./graph-data.js"></script>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

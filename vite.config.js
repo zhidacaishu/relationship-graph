@@ -1,4 +1,4 @@
-import { copyFileSync } from "node:fs";
+import { copyFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
@@ -12,19 +12,15 @@ export default defineConfig(({ mode }) => {
     ? "unweighted-obsidian"
     : "weighted";
   const appRoot = resolve("apps", appName);
-  const plugins = appName === "weighted"
-    ? [
-        {
-          name: "copy-graph-data",
-          closeBundle() {
-            copyFileSync(
-              resolve(appRoot, "graph-data.js"),
-              resolve(appRoot, "dist", "graph-data.js")
-            );
-          }
-        }
-      ]
-    : [];
+  const dataPath = resolve(appRoot, "graph-data.js");
+  const plugins = [
+    {
+      name: "copy-graph-data",
+      closeBundle() {
+        if (existsSync(dataPath)) copyFileSync(dataPath, resolve(appRoot, "dist", "graph-data.js"));
+      }
+    }
+  ];
 
   return {
     root: appRoot,
