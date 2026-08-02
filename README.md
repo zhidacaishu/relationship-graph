@@ -20,7 +20,7 @@
 - Global 与 Local 图谱，以及 1–5 层局部邻域展开；
 - 节点悬停、选择、拖拽、固定、双击和右键菜单；
 - 画布平移、指针中心缩放、自动适配和节点聚焦；
-- 快速搜索、组合过滤和可编辑分组着色；
+- 支持键盘导航和屏幕阅读器状态提示的快速搜索、组合过滤和可编辑分组着色；
 - 标签、附件、未解析链接和孤立节点显示控制；
 - 节点大小、边宽、箭头、标签阈值和力导参数实时调节；
 - PixiJS 图形渲染与 Canvas 2D 回退；
@@ -81,9 +81,15 @@ npm run dev:unweighted
 ### 构建
 
 ```bash
+# 默认构建加权版本
+npm run build
+
+# 显式构建两个版本
 npm run build:weighted
 npm run build:unweighted
 ```
+
+默认的 `dev`、`build` 和 `preview` 命令使用 `weighted` Vite mode；无权重版本需使用带 `:unweighted` 后缀的命令。配置会拒绝未知 mode。
 
 构建产物分别位于：
 
@@ -120,7 +126,8 @@ npm run preview:unweighted
 | 快捷键 | 效果 |
 | --- | --- |
 | `Ctrl/Command + F` 或 `/` | 打开快速搜索 |
-| `Enter` | 聚焦第一个搜索结果 |
+| `↑` / `↓`（搜索中） | 在搜索结果间移动 |
+| `Enter`（搜索中） | 激活当前搜索结果并打开详情卡 |
 | `Esc` | 关闭搜索、右键菜单或清除选择 |
 | `+` / `-` | 放大 / 缩小 |
 | `0` | 适配当前图谱 |
@@ -199,12 +206,14 @@ window.PRECOMPUTED_GRAPH_DATA = {
 
 约束：
 
-- `nodes[].id` 必须唯一；
+- `nodes` 必须是非空数组，`links` 必须是数组但可为空；
+- `nodes[].id` 必须唯一，且不能与运行时合成节点 ID 冲突；
 - `links[].source` 和 `links[].target` 必须引用已存在的基础笔记 ID；
 - 边不包含 `weight` 或 `similarity`；
 - `tags`、`aliases`、`attachments` 和 `unresolved` 均为可选字符串数组；
 - 附件与未解析引用会在运行时转换为独立节点及关系；
-- 基础 wiki links 中 degree 为 0 的笔记会被标记为 orphan。
+- 基础 wiki links 中 degree 为 0 的笔记会被标记为 orphan；
+- 数据结构无效或节点 ID 重复时，页面会显示明确的数据错误而不是启动不完整图谱。
 
 ### 加权文献 schema
 

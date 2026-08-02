@@ -4,10 +4,31 @@ import { createGraphRenderer } from "./graph-renderer.js";
   "use strict";
 
   const source = window.PRECOMPUTED_GRAPH_DATA;
-  if (!source?.nodes?.length || !source?.links?.length) {
-    document.body.innerHTML = "<main style='padding:40px;color:#ddd;background:#202020;height:100vh'>Graph data could not be loaded.</main>";
+  try {
+    if (!Array.isArray(source?.nodes) || source.nodes.length === 0 || !Array.isArray(source?.links)) {
+      throw new Error("nodes must be a non-empty array and links must be an array");
+    }
+    const seenRawIds = new Set();
+    source.nodes.forEach((node) => {
+      const id = String(node?.id);
+      if (seenRawIds.has(id)) throw new Error(`duplicate raw node ID: ${id}`);
+      seenRawIds.add(id);
+    });
+  } catch (error) {
+    const main = document.createElement("main");
+    main.style.cssText = "padding:40px;color:#ddd;background:#202020;height:100vh;font:14px sans-serif";
+    main.textContent = `Graph data error: ${error.message}`;
+    document.body.replaceChildren(main);
     return;
   }
+
+  window.addEventListener("error", (event) => {
+    if (!String(event.error?.message || event.message).startsWith("Graph data error:")) return;
+    const main = document.createElement("main");
+    main.style.cssText = "padding:40px;color:#ddd;background:#202020;height:100vh;font:14px sans-serif";
+    main.textContent = event.error?.message || event.message;
+    document.body.replaceChildren(main);
+  });
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -30,6 +51,8 @@ import { createGraphRenderer } from "./graph-renderer.js";
     filterSearch: $("#filter-search"),
     quickSearch: $("#quick-search"),
     quickSearchWrap: $(".floating-search"),
+    quickResults: $("#quick-results"),
+    quickResultCount: $("#quick-result-count"),
     groupList: $("#group-list"),
     addGroup: $("#add-group"),
     tags: $("#toggle-tags"),
@@ -49,8 +72,10 @@ import { createGraphRenderer } from "./graph-renderer.js";
     nodeTagCount: $("#node-tag-count"),
     nodeLinks: $("#node-links"),
     nodeBacklinks: $("#node-backlinks"),
+    openNote: $("#open-note"),
     openLocal: $("#open-local"),
     pinNode: $("#pin-node"),
+    copyNode: $("#copy-node"),
     hoverLabel: $("#hover-label"),
     contextMenu: $("#context-menu"),
     zoomLevel: $("#zoom-level"),
@@ -73,10 +98,13 @@ import { createGraphRenderer } from "./graph-renderer.js";
     localDepth: 2,
     filterQuery: "",
     quickQuery: "",
+    quickResults: [],
+    quickActiveIndex: -1,
+    searchReturnFocus: null,
     showTags: false,
     showAttachments: false,
     existingOnly: true,
-    showOrphans: false,
+    showOrphans: source.links.length === 0,
     arrows: false,
     textFade: 0.55,
     nodeScale: 1,
@@ -96,9 +124,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     })),
     visibleNodes: [],
     visibleLinks: [],
-    layoutLinks: [],
     visibleById: new Map(),
-    visibleIndex: new Map(),
     adjacency: new Map(),
     incoming: new Map(),
     outgoing: new Map(),
@@ -117,9 +143,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     sharedSnapshot: null,
     sharedControl: null,
     sharedSequence: 0,
-    sharedFrame: 0,
     runtimeMode: "Transfer",
-    workerStats: null,
     monitorFrame: 0,
     renderer: null,
     rendererMode: "Canvas",
@@ -129,15 +153,28 @@ import { createGraphRenderer } from "./graph-renderer.js";
     loadingDismissed: false
   };
 
-  const rawIds = new Set(source.nodes.map((node) => String(node.id)));
-  const baseLinks = source.links.map((rawLink, index) => ({
-    id: `link-${index}`,
-    source: nodeId(rawLink.sourceId ?? rawLink.source),
-    target: nodeId(rawLink.targetId ?? rawLink.target),
-    type: rawLink.type || "wiki"
-  })).filter((link) => rawIds.has(link.source) && rawIds.has(link.target) && link.source !== link.target);
+  const syntheticId = (type, ...parts) => `__graph_synthetic__${encodeURIComponent(JSON.stringify([type, ...parts]))}`;
+  const usedIds = new Set();
+  source.nodes.forEach((node) => {
+    const id = String(node.id);
+    if (usedIds.has(id)) throw new Error(`Graph data error: duplicate raw node ID: ${id}`);
+    usedIds.add(id);
+  });
+  const registerSyntheticId = (type, ...parts) => {
+    const id = syntheticId(type, ...parts);
+    if (usedIds.has(id)) throw new Error(`Graph data error: node ID collision for ${id}`);
+    usedIds.add(id);
+    return id;
+  };
+  const rawIds = new Set(usedIds);
+  const baseLinks = source.links.map((rawLink) => {
+    const sourceId = nodeId(rawLink.sourceId ?? rawLink.source);
+    const targetId = nodeId(rawLink.targetId ?? rawLink.target);
+    const type = rawLink.type || "wiki";
+    return { id: syntheticId("link", type, sourceId, targetId), source: sourceId, target: targetId, type };
+  }).filter((link) => rawIds.has(link.source) && rawIds.has(link.target) && link.source !== link.target);
   const baseDegreeMaps = calculateDegrees(baseLinks);
-  const baseNodes = source.nodes.map((rawNode, index) => {
+  const baseNodes = source.nodes.map((rawNode) => {
     const id = String(rawNode.id);
     const degree = (baseDegreeMaps.incoming.get(id) ?? 0) + (baseDegreeMaps.outgoing.get(id) ?? 0);
     const isOrphan = degree === 0;
@@ -148,10 +185,8 @@ import { createGraphRenderer } from "./graph-renderer.js";
     return {
       id,
       name: String(rawNode.name),
-      cleanName: String(rawNode.name),
       path,
       folder,
-      topFolder: folderFromPath(path),
       tags: normalizeList(rawNode.tags),
       aliases: normalizeList(rawNode.aliases),
       attachments: normalizeList(rawNode.attachments),
@@ -159,8 +194,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
       degree,
       radius: clamp(2.6 + Math.sqrt(degree) * 0.7 + typeAdjustment, 2.25, 7.2),
       type,
-      isOrphan,
-      index
+      isOrphan
     };
   });
   const synthetic = createSyntheticGraph();
@@ -195,9 +229,23 @@ import { createGraphRenderer } from "./graph-renderer.js";
     }
     rebuildGraph({ fit: true });
     monitorSharedPositions();
-    new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
+    const resizeObserver = new ResizeObserver(resizeCanvas);
+    resizeObserver.observe(canvas.parentElement);
+    let dprQuery = null;
+    const handleDprChange = () => {
+      resizeCanvas();
+      bindDprQuery();
+    };
+    const bindDprQuery = () => {
+      dprQuery?.removeEventListener("change", handleDprChange);
+      dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      dprQuery.addEventListener("change", handleDprChange);
+    };
+    bindDprQuery();
     window.addEventListener("beforeunload", () => {
       cancelAnimationFrame(state.monitorFrame);
+      resizeObserver.disconnect();
+      dprQuery?.removeEventListener("change", handleDprChange);
       state.renderer?.destroy();
       state.worker?.terminate();
     });
@@ -215,77 +263,64 @@ import { createGraphRenderer } from "./graph-renderer.js";
     const attachments = { nodes: [], links: [] };
     const unresolved = { nodes: [], links: [] };
     const tagByName = new Map();
-    let syntheticIndex = baseNodes.length;
 
     baseNodes.forEach((node) => {
       node.tags.forEach((tagName) => {
         const normalizedTag = tagName.toLowerCase();
         let tagNode = tagByName.get(normalizedTag);
         if (!tagNode) {
-          const id = `tag:${slugify(normalizedTag)}`;
+          const id = registerSyntheticId("tag", normalizedTag);
           tagNode = {
             id,
             name: `#${normalizedTag}`,
-            cleanName: `#${normalizedTag}`,
             path: `Tags/${normalizedTag}`,
             folder: "Tags",
-            topFolder: "Tags",
             tags: [normalizedTag],
             aliases: [],
             degree: 0,
             radius: 3,
             type: "tag",
-            isOrphan: false,
-            index: syntheticIndex
+            isOrphan: false
           };
-          syntheticIndex += 1;
           tagByName.set(normalizedTag, tagNode);
           tags.nodes.push(tagNode);
         }
         tagNode.degree += 1;
-        tags.links.push({ id: `tag-link-${tags.links.length}`, source: node.id, target: tagNode.id, type: "tag" });
+        tags.links.push({ id: syntheticId("link", "tag", node.id, tagNode.id), source: node.id, target: tagNode.id, type: "tag" });
       });
 
-      node.attachments.forEach((name, attachmentIndex) => {
-        const id = `attachment:${slugify(`${node.id}-${attachmentIndex}-${name}`)}`;
+      node.attachments.forEach((name) => {
+        const id = registerSyntheticId("attachment", node.id, name);
         attachments.nodes.push({
           id,
           name,
-          cleanName: name,
           path: `${node.folder}/Attachments/${name}`,
           folder: node.folder,
-          topFolder: node.topFolder,
           tags: [],
           aliases: [],
           degree: 1,
           radius: 2.4,
           type: "attachment",
-          isOrphan: false,
-          index: syntheticIndex
+          isOrphan: false
         });
-        syntheticIndex += 1;
-        attachments.links.push({ id: `attachment-link-${attachments.links.length}`, source: node.id, target: id, type: "attachment" });
+        attachments.links.push({ id: syntheticId("link", "attachment", node.id, id), source: node.id, target: id, type: "attachment" });
       });
 
-      node.unresolved.forEach((name, unresolvedIndex) => {
-        const id = `unresolved:${slugify(`${node.id}-${unresolvedIndex}-${name}`)}`;
+      node.unresolved.forEach((name) => {
+        const id = registerSyntheticId("unresolved", node.id, name);
         unresolved.nodes.push({
           id,
           name,
-          cleanName: name,
           path: `${node.folder}/${name}.md`,
           folder: node.folder,
-          topFolder: node.topFolder,
           tags: [],
           aliases: [],
           degree: 1,
           radius: 2.2,
           type: "unresolved",
-          isOrphan: false,
-          index: syntheticIndex
+          isOrphan: false
         });
-        syntheticIndex += 1;
-        unresolved.links.push({ id: `unresolved-link-${unresolved.links.length}`, source: node.id, target: id, type: "unresolved" });
+        unresolved.links.push({ id: syntheticId("link", "unresolved", node.id, id), source: node.id, target: id, type: "unresolved" });
       });
     });
 
@@ -304,10 +339,6 @@ import { createGraphRenderer } from "./graph-renderer.js";
   function folderFromPath(path = "") {
     const [folder = "Inbox"] = String(path).split("/");
     return folder || "Inbox";
-  }
-
-  function slugify(value) {
-    return String(value).toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   }
 
   function clamp(value, minimum, maximum) {
@@ -344,11 +375,28 @@ import { createGraphRenderer } from "./graph-renderer.js";
 
     elements.quickSearch.addEventListener("input", () => {
       state.quickQuery = elements.quickSearch.value.trim().toLowerCase();
+      updateQuickResults();
       scheduleRender();
     });
     elements.quickSearch.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") focusFirstSearchResult();
-      if (event.key === "Escape") closeQuickSearch();
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setQuickActive(state.quickActiveIndex + 1);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setQuickActive(state.quickActiveIndex - 1);
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        activateQuickResult();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        closeQuickSearch();
+      }
+    });
+    elements.quickResults.addEventListener("pointerdown", (event) => event.preventDefault());
+    elements.quickResults.addEventListener("click", (event) => {
+      const option = event.target.closest("[role='option']");
+      if (option) activateQuickResult(Number(option.dataset.index));
     });
 
     elements.tags.addEventListener("change", () => {
@@ -407,15 +455,24 @@ import { createGraphRenderer } from "./graph-renderer.js";
       return value.toFixed(0);
     }, updateForces);
 
+    elements.orphans.checked = state.showOrphans;
     elements.addGroup.addEventListener("click", addGroup);
     $$(".mode-button").forEach((button) => button.addEventListener("click", () => setMode(button.dataset.mode)));
 
     elements.nodeCardClose.addEventListener("click", clearSelection);
+    elements.openNote.addEventListener("click", () => {
+      const node = state.selectedId && state.visibleById.get(state.selectedId);
+      if (node) openNote(node);
+    });
     elements.openLocal.addEventListener("click", () => {
       if (state.selectedId) openLocalGraph(state.selectedId);
     });
     elements.pinNode.addEventListener("click", () => {
       if (state.selectedId) togglePin(state.selectedId);
+    });
+    elements.copyNode.addEventListener("click", () => {
+      const node = state.selectedId && state.visibleById.get(state.selectedId);
+      if (node) void copyNodeLink(node);
     });
 
     $(".ribbon-button[aria-label='Search']").addEventListener("click", openQuickSearch);
@@ -494,7 +551,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     elements.contextMenu.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-action]");
       if (!button || !state.contextId) return;
-      handleContextAction(button.dataset.action, state.contextId);
+      void handleContextAction(button.dataset.action, state.contextId).catch((error) => console.error("Context action failed", error));
       hideContextMenu();
     });
 
@@ -517,8 +574,9 @@ import { createGraphRenderer } from "./graph-renderer.js";
     if (node) {
       state.draggingId = node.id;
       const world = screenToWorld(point.x, point.y);
-      updateNodePosition(node.id, world.x, world.y);
-      state.worker.postMessage({ type: "drag", id: node.id, x: world.x, y: world.y });
+      state.pointer.offsetX = node.x - world.x;
+      state.pointer.offsetY = node.y - world.y;
+      state.worker.postMessage({ type: "drag", id: node.id, x: node.x, y: node.y });
     } else {
       state.panning = true;
     }
@@ -535,8 +593,10 @@ import { createGraphRenderer } from "./graph-renderer.js";
 
       if (state.draggingId) {
         const world = screenToWorld(point.x, point.y);
-        updateNodePosition(state.draggingId, world.x, world.y);
-        state.worker.postMessage({ type: "drag", id: state.draggingId, x: world.x, y: world.y });
+        const x = world.x + state.pointer.offsetX;
+        const y = world.y + state.pointer.offsetY;
+        updateNodePosition(state.draggingId, x, y);
+        state.worker.postMessage({ type: "drag", id: state.draggingId, x, y });
       } else if (state.panning) {
         state.camera.x += dx;
         state.camera.y += dy;
@@ -554,7 +614,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     const releasedId = state.draggingId;
     const wasMoved = state.dragMoved;
     if (releasedId) {
-      state.worker.postMessage({ type: "release", id: releasedId, pinned: state.pinned.has(releasedId) });
+      state.worker.postMessage({ type: "release", id: releasedId, pinned: state.pinned.has(releasedId), anchored: state.mode === "local" && releasedId === state.localRoot });
       if (!wasMoved) selectNode(releasedId);
     } else if (!wasMoved) {
       clearSelection();
@@ -584,29 +644,46 @@ import { createGraphRenderer } from "./graph-renderer.js";
     }
     state.contextId = node.id;
     const point = canvasPoint(event.clientX, event.clientY);
-    const menuWidth = 190;
-    const menuHeight = 132;
-    elements.contextMenu.style.left = `${Math.min(point.x, state.width - menuWidth - 8)}px`;
-    elements.contextMenu.style.top = `${Math.min(point.y, state.height - menuHeight - 8)}px`;
     const pinLabel = $("[data-action='pin'] span", elements.contextMenu);
     pinLabel.textContent = state.pinned.has(node.id) ? "Unpin node" : "Pin node";
     elements.contextMenu.hidden = false;
+    elements.contextMenu.style.visibility = "hidden";
+    elements.contextMenu.style.left = "8px";
+    elements.contextMenu.style.top = "8px";
+    const menuWidth = elements.contextMenu.offsetWidth;
+    const menuHeight = elements.contextMenu.offsetHeight;
+    elements.contextMenu.style.left = `${clamp(point.x, 8, Math.max(8, state.width - menuWidth - 8))}px`;
+    elements.contextMenu.style.top = `${clamp(point.y, 8, Math.max(8, state.height - menuHeight - 8))}px`;
+    elements.contextMenu.style.visibility = "";
   }
 
-  function handleContextAction(action, id) {
+  async function handleContextAction(action, id) {
     const node = state.visibleById.get(id) ?? allNodeLookup.get(id);
     if (!node) return;
-    if (action === "open") {
-      selectNode(id);
-      showToast(`Opened “${node.cleanName}”`);
-    } else if (action === "local") {
-      openLocalGraph(id);
-    } else if (action === "pin") {
-      togglePin(id);
-    } else if (action === "copy") {
-      const link = `[[${node.cleanName}]]`;
-      navigator.clipboard?.writeText(link).catch(() => {});
+    if (action === "open") openNote(node);
+    else if (action === "local") openLocalGraph(id);
+    else if (action === "pin") togglePin(id);
+    else if (action === "copy") await copyNodeLink(node);
+  }
+
+  function openNote(node) {
+    selectNode(node.id);
+    showToast(`Opened “${node.name}”`);
+  }
+
+  async function copyNodeLink(node) {
+    const link = `[[${node.name}]]`;
+    if (!navigator.clipboard?.writeText) {
+      showToast("Could not copy link");
+      return false;
+    }
+    try {
+      await navigator.clipboard.writeText(link);
       showToast(`Copied ${link}`);
+      return true;
+    } catch {
+      showToast("Could not copy link");
+      return false;
     }
   }
 
@@ -687,17 +764,15 @@ import { createGraphRenderer } from "./graph-renderer.js";
     state.visibleNodes = [...allowedIds].map((id) => ({ ...poolById.get(id) }));
     state.visibleLinks = poolLinks.filter((link) => allowedIds.has(link.source) && allowedIds.has(link.target));
     state.visibleById = new Map(state.visibleNodes.map((node) => [node.id, node]));
-    state.visibleIndex = new Map(state.visibleNodes.map((node, index) => [node.id, index]));
     buildAdjacency();
     applyGroupColors();
-
-    state.layoutLinks = [...state.visibleLinks];
 
     if (state.selectedId && !state.visibleById.has(state.selectedId)) clearSelection();
     if (state.hoveredId && !state.visibleById.has(state.hoveredId)) setHovered(null);
     initializeWorkerLayout();
     updateCounts();
     renderGroupList();
+    if (elements.quickSearchWrap.classList.contains("is-visible")) updateQuickResults();
     state.hasFitted = !fit && state.hasFitted;
     if (fit) state.hasFitted = false;
     scheduleRender();
@@ -800,7 +875,6 @@ import { createGraphRenderer } from "./graph-renderer.js";
       state.sharedSnapshot = new Float32Array(state.sharedPositions.length);
       state.sharedControl = new Int32Array(controlBuffer);
       state.sharedSequence = 0;
-      state.sharedFrame = 0;
       state.runtimeMode = "Shared";
     } else {
       state.sharedPositions = null;
@@ -810,22 +884,32 @@ import { createGraphRenderer } from "./graph-renderer.js";
     }
 
     const nodes = state.visibleNodes.map((node) => {
-      const cached = state.positionCache.get(node.id) ?? initialPosition(node);
+      const isLocalRoot = state.mode === "local" && node.id === state.localRoot;
+      const cached = isLocalRoot ? { x: 0, y: 0 } : state.positionCache.get(positionCacheKey(node.id)) ?? initialPosition(node);
       node.x = cached.x;
       node.y = cached.y;
-      return { id: node.id, x: node.x, y: node.y, radius: node.radius * state.nodeScale, pinned: state.pinned.has(node.id) };
+      return { id: node.id, x: node.x, y: node.y, radius: node.radius * state.nodeScale, pinned: state.pinned.has(node.id), anchored: isLocalRoot };
     });
 
     state.worker.postMessage({
       type: "init",
       revision,
       nodes,
-      links: state.layoutLinks,
+      links: state.visibleLinks,
       forces: state.forces,
       sharedBuffer,
       controlBuffer
     });
     setWorkerStatus("active");
+    if (!state.visibleNodes.length) {
+      state.hasFitted = true;
+      dismissLoading();
+      scheduleRender();
+    }
+  }
+
+  function positionCacheKey(id) {
+    return state.mode === "local" ? `local:${state.localRoot}:${id}` : `global:${id}`;
   }
 
   function initialPosition(node) {
@@ -859,9 +943,18 @@ import { createGraphRenderer } from "./graph-renderer.js";
     } else if (data.type === "status") {
       setWorkerStatus(data.status);
     } else if (data.type === "stats") {
-      state.workerStats = data;
-      elements.workerStatus.title = `Barnes–Hut ${data.tickMs.toFixed(2)}ms · tree ${data.treeMs.toFixed(2)}ms · ${data.exactChecks.toLocaleString()} exact checks · ${data.overlapCount.toLocaleString()} overlaps · max ${data.maxOverlap.toFixed(2)}px · ${data.collisionIterations} collision passes`;
+      const fixed = (value, digits) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : "0";
+      const integer = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString() : "0";
+      elements.workerStatus.title = `Barnes–Hut ${fixed(data.tickMs, 2)}ms · tree ${fixed(data.treeMs, 2)}ms · ${integer(data.exactChecks)} exact checks · ${integer(data.overlapCount)} overlaps · ${integer(data.blockedOverlapCount)} blocked · max ${fixed(data.maxOverlap, 2)}px · ${integer(data.collisionIterations)} collision passes`;
     } else if (data.type === "ready") {
+      if (data.protocolVersion !== 5) {
+        state.worker?.terminate();
+        state.worker = null;
+        elements.workerStatus.textContent = "Layout unavailable";
+        elements.statusPulse.classList.remove("is-active");
+        dismissLoading();
+        return;
+      }
       state.runtimeMode = data.shared ? "Shared" : "Transfer";
       setWorkerStatus("active");
     }
@@ -876,7 +969,6 @@ import { createGraphRenderer } from "./graph-renderer.js";
         const sequenceAfter = Atomics.load(state.sharedControl, 0);
         if (sequenceBefore === sequenceAfter) {
           state.sharedSequence = sequenceAfter;
-          state.sharedFrame = frame;
           consumePositions(state.sharedSnapshot, frame);
         }
       }
@@ -889,7 +981,6 @@ import { createGraphRenderer } from "./graph-renderer.js";
     state.visibleNodes.forEach((node, index) => {
       node.x = positions[index * 2];
       node.y = positions[index * 2 + 1];
-      state.positionCache.set(node.id, { x: node.x, y: node.y });
     });
     if (!state.hasFitted && frame >= 6) {
       fitGraph(false);
@@ -908,7 +999,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
 
   function cacheCurrentPositions() {
     state.visibleNodes.forEach((node) => {
-      if (Number.isFinite(node.x) && Number.isFinite(node.y)) state.positionCache.set(node.id, { x: node.x, y: node.y });
+      if (Number.isFinite(node.x) && Number.isFinite(node.y)) state.positionCache.set(positionCacheKey(node.id), { x: node.x, y: node.y });
     });
   }
 
@@ -917,7 +1008,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     if (!node) return;
     node.x = x;
     node.y = y;
-    state.positionCache.set(id, { x, y });
+    state.positionCache.set(positionCacheKey(id), { x, y });
   }
 
   function setWorkerStatus(status) {
@@ -932,16 +1023,17 @@ import { createGraphRenderer } from "./graph-renderer.js";
     const previousHeight = state.height;
     state.width = Math.max(1, bounds.width);
     state.height = Math.max(1, bounds.height);
+    const sizeChanged = state.width !== previousWidth || state.height !== previousHeight;
     state.dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(state.width * state.dpr);
     canvas.height = Math.round(state.height * state.dpr);
     canvas.style.width = `${state.width}px`;
     canvas.style.height = `${state.height}px`;
     state.renderer?.resize(state.width, state.height, state.dpr);
-    if (previousWidth > 1) {
+    if (previousWidth > 1 && sizeChanged) {
       state.camera.x += (state.width - previousWidth) / 2;
       state.camera.y += (state.height - previousHeight) / 2;
-    } else {
+    } else if (previousWidth <= 1) {
       state.camera.x = state.width / 2;
       state.camera.y = state.height / 2;
     }
@@ -959,8 +1051,10 @@ import { createGraphRenderer } from "./graph-renderer.js";
     if (state.renderer) {
       context.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
       context.clearRect(0, 0, state.width, state.height);
-      if (!state.visibleNodes.length) renderEmptyState();
-      else state.renderer.render(state);
+      if (!state.visibleNodes.length) {
+        state.renderer.clear();
+        renderEmptyState();
+      } else state.renderer.render(state);
       return;
     }
 
@@ -1052,7 +1146,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
       const isSearchMatch = searchMatches?.has(node.id);
       const faded = focusId && !isFocus && !isNeighbor;
       const searchFaded = searchMatches && searchMatches.size && !isSearchMatch;
-      const alpha = faded ? 0.13 : searchFaded ? 0.18 : 0.9;
+      const alpha = faded ? 0.12 : searchFaded ? 0.17 : node.isOrphan ? 0.48 : 0.86;
 
       if (isFocus || isSelected || isSearchMatch) {
         const glowRadius = radius * (isSelected ? 3.8 : 3.1) + 5;
@@ -1129,7 +1223,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
       const faded = focusId && !focused && !neighbor;
       const fontSize = focused ? 11.5 : Math.min(10.5, 8.2 + state.camera.scale * 1.15);
       context.font = `${focused ? 500 : 400} ${fontSize}px "Segoe UI Variable Text", "Segoe UI", sans-serif`;
-      const label = truncateLabel(node.cleanName, focused ? 55 : state.camera.scale > 1.35 ? 38 : 27);
+      const label = truncateLabel(node.name, focused ? 55 : state.camera.scale > 1.35 ? 38 : 27);
       const width = context.measureText(label).width;
       const radius = Math.max(1.15, node.radius * state.nodeScale * state.camera.scale);
       const rect = { x: point.x + radius + 4, y: point.y - fontSize / 2 - 1, width: width + 3, height: fontSize + 2 };
@@ -1232,7 +1326,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     if (!node) return;
     state.selectedId = id;
     elements.nodeType.textContent = node.type.toUpperCase();
-    elements.nodeTitle.textContent = node.cleanName;
+    elements.nodeTitle.textContent = node.name;
     elements.nodePath.textContent = node.path;
     elements.nodeFolder.textContent = node.folder || "—";
     elements.nodeTags.textContent = node.tags.length ? node.tags.map((tag) => `#${tag}`).join("  ") : "No tags";
@@ -1241,6 +1335,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     elements.nodeBacklinks.textContent = state.incoming.get(id) ?? fullDegrees.incoming.get(id) ?? 0;
     updatePinButton();
     elements.nodeCard.hidden = false;
+    showToast(`Selected “${node.name}”`);
     scheduleRender();
   }
 
@@ -1414,29 +1509,82 @@ import { createGraphRenderer } from "./graph-renderer.js";
   }
 
   function openQuickSearch() {
+    if (!elements.quickSearchWrap.classList.contains("is-visible")) state.searchReturnFocus = document.activeElement;
     elements.quickSearchWrap.classList.add("is-visible");
     elements.quickSearch.focus();
     elements.quickSearch.select();
+    updateQuickResults();
   }
 
   function closeQuickSearch() {
     state.quickQuery = "";
+    state.quickResults = [];
+    state.quickActiveIndex = -1;
     elements.quickSearch.value = "";
     elements.quickSearchWrap.classList.remove("is-visible");
-    elements.quickSearch.blur();
+    elements.quickResults.hidden = true;
+    elements.quickResults.replaceChildren();
+    elements.quickSearch.setAttribute("aria-expanded", "false");
+    elements.quickSearch.removeAttribute("aria-activedescendant");
+    const returnFocus = state.searchReturnFocus;
+    state.searchReturnFocus = null;
+    if (returnFocus instanceof HTMLElement && returnFocus.isConnected) returnFocus.focus();
+    else canvas.focus();
     scheduleRender();
   }
 
-  function focusFirstSearchResult() {
-    const result = state.visibleNodes
-      .filter(matchesQuickSearch)
-      .sort((a, b) => quickSearchScore(b) - quickSearchScore(a))[0];
+  function updateQuickResults() {
+    state.quickResults = state.quickQuery ? state.visibleNodes.filter(matchesQuickSearch).sort((a, b) => quickSearchScore(b) - quickSearchScore(a)).slice(0, 20) : [];
+    state.quickActiveIndex = state.quickResults.length ? 0 : -1;
+    renderQuickResults();
+  }
+
+  function renderQuickResults() {
+    const options = state.quickResults.map((node, index) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.id = `quick-option-${index}`;
+      option.className = "quick-result";
+      option.dataset.index = String(index);
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", String(index === state.quickActiveIndex));
+      const name = document.createElement("strong");
+      name.textContent = node.name;
+      const path = document.createElement("span");
+      path.textContent = node.path;
+      option.append(name, path);
+      return option;
+    });
+    elements.quickResults.replaceChildren(...options);
+    const expanded = Boolean(state.quickQuery);
+    elements.quickResults.hidden = !expanded;
+    elements.quickSearch.setAttribute("aria-expanded", String(expanded));
+    elements.quickResultCount.textContent = expanded ? `${state.quickResults.length} search results` : "";
+    setQuickActive(state.quickActiveIndex, false);
+  }
+
+  function setQuickActive(index, scroll = true) {
+    if (!state.quickResults.length) {
+      state.quickActiveIndex = -1;
+      elements.quickSearch.removeAttribute("aria-activedescendant");
+      return;
+    }
+    state.quickActiveIndex = (index + state.quickResults.length) % state.quickResults.length;
+    $$("[role='option']", elements.quickResults).forEach((option, optionIndex) => option.setAttribute("aria-selected", String(optionIndex === state.quickActiveIndex)));
+    const active = $(`#quick-option-${state.quickActiveIndex}`, elements.quickResults);
+    elements.quickSearch.setAttribute("aria-activedescendant", active.id);
+    if (scroll) active.scrollIntoView({ block: "nearest" });
+  }
+
+  function activateQuickResult(index = state.quickActiveIndex) {
+    const result = state.quickResults[index];
     if (!result) {
       showToast("No matching note");
       return;
     }
     selectNode(result.id);
     centerOnNode(result.id);
+    closeQuickSearch();
   }
 
   function matchesQuickSearch(node) {
@@ -1446,7 +1594,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
 
   function quickSearchScore(node) {
     const query = state.quickQuery;
-    const name = node.cleanName.toLowerCase();
+    const name = node.name.toLowerCase();
     const exact = name === query ? 100 : name.startsWith(query) ? 60 : name.includes(query) ? 30 : 0;
     return exact + node.degree;
   }

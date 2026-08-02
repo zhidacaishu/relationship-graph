@@ -61,7 +61,8 @@
     </aside>
 
     <main class="graph-workspace">
-      <canvas id="graph-canvas" aria-label="Interactive knowledge graph"></canvas>
+      <p id="graph-instructions" class="sr-only">Interactive knowledge graph. Use pointer drag to pan or move nodes, wheel to zoom, and Enter on search results to focus a note.</p>
+      <canvas id="graph-canvas" tabindex="0" aria-label="Interactive knowledge graph" aria-describedby="graph-instructions"></canvas>
       <div class="canvas-vignette" aria-hidden="true"></div>
 
       <section class="graph-heading" aria-label="Graph mode and search">
@@ -70,11 +71,15 @@
           <button class="mode-button is-active" data-mode="global">Global</button>
           <button class="mode-button" data-mode="local">Local</button>
         </div>
-        <label class="floating-search">
-          <svg><use href="#i-search"/></svg>
-          <input id="quick-search" type="search" autocomplete="off" spellcheck="false" placeholder="Search files…">
-          <kbd>⌘ F</kbd>
-        </label>
+        <div class="quick-search-shell">
+          <label class="floating-search">
+            <svg><use href="#i-search"/></svg>
+            <input id="quick-search" type="search" role="combobox" aria-label="Search the vault" aria-autocomplete="list" aria-controls="quick-search-results" aria-expanded="false" aria-activedescendant="" autocomplete="off" spellcheck="false" placeholder="Search files…">
+            <kbd>⌘ F</kbd>
+          </label>
+          <div id="quick-search-results" class="quick-search-results" role="listbox" hidden></div>
+          <span id="quick-search-count" class="sr-only" aria-live="polite"></span>
+        </div>
       </section>
 
       <button id="panel-toggle" class="panel-toggle icon-button" aria-label="Toggle graph controls" aria-expanded="true"><svg><use href="#i-panel"/></svg></button>
@@ -154,7 +159,7 @@
         </section>
       </aside>
 
-      <section id="node-card" class="node-card" aria-live="polite" hidden>
+      <section id="node-card" class="node-card" aria-live="polite" aria-labelledby="node-title" hidden>
         <div class="node-card-top"><span id="node-type" class="node-type">NOTE</span><button id="node-card-close" class="icon-button" aria-label="Close details"><svg><use href="#i-x"/></svg></button></div>
         <h2 id="node-title"></h2>
         <div id="node-path" class="node-path"></div>
@@ -164,18 +169,20 @@
           <div><strong id="node-year">—</strong><span>created</span></div>
         </div>
         <div class="node-card-actions">
-          <button id="open-local"><svg><use href="#i-graph"/></svg>Local graph</button>
+          <button id="open-note"><svg><use href="#i-files"/></svg>Open note</button>
+          <button id="open-local"><svg><use href="#i-graph"/></svg>Local</button>
           <button id="pin-node"><svg><use href="#i-pin"/></svg><span>Pin</span></button>
+          <button id="copy-link"><svg><use href="#i-copy"/></svg>Copy</button>
         </div>
       </section>
 
       <div id="hover-label" class="hover-label" hidden></div>
-      <div id="context-menu" class="context-menu" hidden>
-        <button data-action="open"><svg><use href="#i-files"/></svg>Open note</button>
-        <button data-action="local"><svg><use href="#i-graph"/></svg>Open local graph</button>
-        <button data-action="pin"><svg><use href="#i-pin"/></svg><span>Pin node</span></button>
-        <div class="menu-divider"></div>
-        <button data-action="copy"><svg><use href="#i-copy"/></svg>Copy Obsidian link</button>
+      <div id="context-menu" class="context-menu" role="menu" hidden>
+        <button role="menuitem" data-action="open"><svg><use href="#i-files"/></svg>Open note</button>
+        <button role="menuitem" data-action="local"><svg><use href="#i-graph"/></svg>Open local graph</button>
+        <button role="menuitem" data-action="pin"><svg><use href="#i-pin"/></svg><span>Pin node</span></button>
+        <div class="menu-divider" role="separator"></div>
+        <button role="menuitem" data-action="copy"><svg><use href="#i-copy"/></svg>Copy Obsidian link</button>
       </div>
 
       <div class="canvas-toolbar" aria-label="Canvas controls">

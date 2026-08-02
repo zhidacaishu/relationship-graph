@@ -78,6 +78,18 @@ class GraphRenderer {
     this.app.renderer.resize(Math.max(1, width), Math.max(1, height));
   }
 
+  clear() {
+    this.linksGraphics.clear();
+    this.arrowsGraphics.clear();
+    this.nodesGraphics.clear();
+    this.emphasisGraphics.clear();
+    for (const label of this.labelPool) label.visible = false;
+    this.labelPlacements.clear();
+    this.graphKey = "";
+    this.lastPlacementScale = 0;
+    this.app.renderer.render(this.app.stage);
+  }
+
   destroy() {
     this.app.destroy(true, { children: true, texture: true });
   }

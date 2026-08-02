@@ -1,6 +1,6 @@
 import { applyBarnesHut, buildQuadtree, queryRange } from "./graph-quadtree.js";
 
-const PROTOCOL_VERSION = 4;
+const PROTOCOL_VERSION = 5;
 const CONTROL_SEQUENCE = 0;
 const CONTROL_FRAME = 1;
 const CONTROL_STATUS = 2;
@@ -21,7 +21,8 @@ let vx = new Float32Array(0);
 let vy = new Float32Array(0);
 let radii = new Float32Array(0);
 let degrees = new Uint16Array(0);
-let fixed = new Uint8Array(0);
+let pinned = new Uint8Array(0);
+let anchored = new Uint8Array(0);
 let draggedIndex = -1;
 let links = [];
 let alpha = 0;
@@ -44,28 +45,25 @@ self.onmessage = ({ data }) => {
       break;
     case "forces":
       forces = { ...forces, ...data.forces };
-      alpha = Math.max(alpha, 0.68);
-      announceStatus("active");
+      reheat(0.68);
       break;
     case "radii":
       updateRadii(data);
       break;
     case "reheat":
-      alpha = Math.max(alpha, data.alpha ?? 0.8);
-      announceStatus("active");
+      reheat(data.alpha ?? 0.8);
       break;
     case "drag":
       draggedIndex = idToIndex.get(data.id) ?? -1;
-      setNodePosition(data.id, data.x, data.y, true);
+      setNodePosition(data.id, data.x, data.y);
       alphaTarget = 0.16;
-      alpha = Math.max(alpha, 0.34);
-      announceStatus("active");
+      reheat(0.34);
       break;
     case "release":
-      releaseNode(data.id, Boolean(data.pinned));
+      releaseNode(data.id, Boolean(data.pinned), Boolean(data.anchored));
       draggedIndex = -1;
       alphaTarget = 0;
-      alpha = Math.max(alpha, 0.2);
+      reheat(0.2);
       break;
     case "pin":
       setPinned(data.id, Boolean(data.pinned));
@@ -85,13 +83,15 @@ function initialize(data) {
   vy = new Float32Array(count);
   radii = new Float32Array(count);
   degrees = new Uint16Array(count);
-  fixed = new Uint8Array(count);
+  pinned = new Uint8Array(count);
+  anchored = new Uint8Array(count);
 
   data.nodes.forEach((node, index) => {
     x[index] = Number.isFinite(node.x) ? node.x : seededCoordinate(index, count, 0);
     y[index] = Number.isFinite(node.y) ? node.y : seededCoordinate(index, count, 1);
     radii[index] = node.radius || 3;
-    fixed[index] = node.pinned ? 1 : 0;
+    pinned[index] = node.pinned ? 1 : 0;
+    anchored[index] = node.anchored ? 1 : 0;
   });
 
   links = data.links
@@ -115,17 +115,17 @@ function initialize(data) {
     Atomics.store(sharedControl, CONTROL_FRAME, 0);
     Atomics.store(sharedControl, CONTROL_STATUS, STATUS_ACTIVE);
   }
-  alpha = 1;
+  alpha = count ? 1 : 0;
   alphaTarget = 0;
   frame = 0;
-  announceStatus("active");
-  publishPositions(true);
   self.postMessage({
     type: "ready",
     revision,
     protocolVersion: PROTOCOL_VERSION,
     shared: Boolean(sharedPositions && sharedControl)
   });
+  announceStatus(count ? "active" : "settled");
+  publishPositions(true);
 }
 
 function seededCoordinate(index, count, axis) {
@@ -141,36 +141,53 @@ function pseudoRandom(seed) {
   return ((value ^ value >>> 14) >>> 0) / 4294967296;
 }
 
-function updateRadii(data) {
-  if (data.revision !== revision || data.radii?.length !== radii.length) return;
-  radii.set(data.radii);
-  alpha = Math.max(alpha, 0.24);
+function reheat(minimumAlpha) {
+  alpha = Math.max(alpha, minimumAlpha);
   announceStatus("active");
 }
 
-function setNodePosition(id, nextX, nextY, shouldFix) {
+function isFixed(index) {
+  return Boolean(pinned[index] || anchored[index]);
+}
+
+function isImmovable(index) {
+  return isFixed(index) || index === draggedIndex;
+}
+
+function updateRadii(data) {
+  if (data.revision !== revision || data.radii?.length !== radii.length) return;
+  radii.set(data.radii);
+  reheat(0.24);
+}
+
+function setNodePosition(id, nextX, nextY) {
   const index = idToIndex.get(id);
   if (index === undefined) return;
   x[index] = nextX;
   y[index] = nextY;
   vx[index] = 0;
   vy[index] = 0;
-  fixed[index] = shouldFix ? 1 : fixed[index];
   publishPositions(true);
 }
 
-function releaseNode(id, pinned) {
+function releaseNode(id, nextPinned, nextAnchored) {
   const index = idToIndex.get(id);
   if (index === undefined) return;
-  fixed[index] = pinned ? 1 : 0;
-}
-
-function setPinned(id, pinned) {
-  const index = idToIndex.get(id);
-  if (index === undefined) return;
-  fixed[index] = pinned ? 1 : 0;
+  pinned[index] = nextPinned ? 1 : 0;
+  anchored[index] = nextAnchored ? 1 : 0;
   vx[index] = 0;
   vy[index] = 0;
+}
+
+function setPinned(id, nextPinned) {
+  const index = idToIndex.get(id);
+  if (index === undefined) return;
+  const wasPinned = Boolean(pinned[index]);
+  if (wasPinned === nextPinned) return;
+  pinned[index] = nextPinned ? 1 : 0;
+  vx[index] = 0;
+  vy[index] = 0;
+  if (wasPinned && !nextPinned) reheat(0.24);
 }
 
 function simulate() {
@@ -193,7 +210,7 @@ function simulate() {
     const charge = forces.repelStrength * 2.7 * alpha;
 
     for (let index = 0; index < count; index += 1) {
-      if (fixed[index]) continue;
+      if (isImmovable(index)) continue;
       const force = applyBarnesHut(tree, index, x, y, 0.72, 32, charge);
       vx[index] += force.x;
       vy[index] += force.y;
@@ -207,9 +224,12 @@ function simulate() {
     alpha = 0;
   }
 
-  const collision = resolveCollisions(dynamicsActive ? ACTIVE_COLLISION_ITERATIONS : SETTLE_COLLISION_ITERATIONS);
+  const collision = resolveCollisions(
+    dynamicsActive ? ACTIVE_COLLISION_ITERATIONS : SETTLE_COLLISION_ITERATIONS,
+    !dynamicsActive
+  );
   treeMs += collision.treeMs;
-  const settled = !dynamicsActive && collision.overlapCount === 0;
+  const settled = !dynamicsActive && collision.resolvableOverlapCount === 0;
 
   frame += 1;
   if (settled || frame % 2 === 0) publishPositions(settled);
@@ -224,6 +244,8 @@ function simulate() {
       approximateChecks,
       exactChecks,
       overlapCount: collision.overlapCount,
+      resolvableOverlapCount: collision.resolvableOverlapCount,
+      blockedOverlapCount: collision.blockedOverlapCount,
       maxOverlap: collision.maxOverlap,
       collisionIterations: collision.iterations
     });
@@ -231,46 +253,50 @@ function simulate() {
   if (settled) announceStatus("settled");
 }
 
-function resolveCollisions(maxIterations) {
+function resolveCollisions(maxIterations, exactFinal) {
   let treeMs = 0;
-  let iterations = 0;
+  let result = emptyCollisionResult();
 
-  for (; iterations < maxIterations; iterations += 1) {
+  for (let iterations = 0; iterations < maxIterations; iterations += 1) {
     const treeStarted = performance.now();
     const tree = buildQuadtree(x, y, radii);
     treeMs += performance.now() - treeStarted;
-    const result = projectCollisions(tree);
-    if (result.overlapCount === 0) return { ...result, iterations: iterations + 1, treeMs };
+    result = projectCollisions(tree);
+    if (result.resolvableOverlapCount === 0) return { ...result, iterations: iterations + 1, treeMs };
   }
 
+  if (!exactFinal) return { ...result, iterations: maxIterations, treeMs };
   const treeStarted = performance.now();
   const tree = buildQuadtree(x, y, radii);
   treeMs += performance.now() - treeStarted;
-  return { ...measureCollisions(tree), iterations, treeMs };
+  return { ...measureCollisions(tree), iterations: maxIterations, treeMs };
+}
+
+function emptyCollisionResult() {
+  return { overlapCount: 0, resolvableOverlapCount: 0, blockedOverlapCount: 0, maxOverlap: 0 };
 }
 
 function projectCollisions(tree) {
-  if (!tree) return { overlapCount: 0, maxOverlap: 0 };
+  if (!tree) return emptyCollisionResult();
   const searchPadding = tree.maxRadius + COLLISION_PADDING;
-  let overlapCount = 0;
-  let maxOverlap = 0;
+  const result = emptyCollisionResult();
 
   forEachCollisionPair(tree, searchPadding, (index, other, dx, dy, distance, overlap) => {
-    overlapCount += 1;
-    maxOverlap = Math.max(maxOverlap, overlap);
+    result.overlapCount += 1;
+    result.maxOverlap = Math.max(result.maxOverlap, overlap);
+    const indexImmovable = isImmovable(index);
+    const otherImmovable = isImmovable(other);
+    if (indexImmovable && otherImmovable) {
+      result.blockedOverlapCount += 1;
+      return;
+    }
+    result.resolvableOverlapCount += 1;
     const correction = overlap + COLLISION_EPSILON;
     const unitX = dx / distance;
     const unitY = dy / distance;
-    const indexDragged = index === draggedIndex;
-    const otherDragged = other === draggedIndex;
-
-    if (indexDragged && !otherDragged) {
+    if (indexImmovable) {
       displace(other, unitX * correction, unitY * correction);
-    } else if (otherDragged && !indexDragged) {
-      displace(index, -unitX * correction, -unitY * correction);
-    } else if (fixed[index] && !fixed[other]) {
-      displace(other, unitX * correction, unitY * correction);
-    } else if (!fixed[index] && fixed[other]) {
+    } else if (otherImmovable) {
       displace(index, -unitX * correction, -unitY * correction);
     } else {
       const half = correction * 0.5;
@@ -279,21 +305,22 @@ function projectCollisions(tree) {
     }
   });
 
-  return { overlapCount, maxOverlap };
+  return result;
 }
 
 function measureCollisions(tree) {
-  if (!tree) return { overlapCount: 0, maxOverlap: 0 };
+  if (!tree) return emptyCollisionResult();
   const searchPadding = tree.maxRadius + COLLISION_PADDING;
-  let overlapCount = 0;
-  let maxOverlap = 0;
+  const result = emptyCollisionResult();
 
-  forEachCollisionPair(tree, searchPadding, (_index, _other, _dx, _dy, _distance, overlap) => {
-    overlapCount += 1;
-    maxOverlap = Math.max(maxOverlap, overlap);
+  forEachCollisionPair(tree, searchPadding, (index, other, _dx, _dy, _distance, overlap) => {
+    result.overlapCount += 1;
+    result.maxOverlap = Math.max(result.maxOverlap, overlap);
+    if (isImmovable(index) && isImmovable(other)) result.blockedOverlapCount += 1;
+    else result.resolvableOverlapCount += 1;
   });
 
-  return { overlapCount, maxOverlap };
+  return result;
 }
 
 function forEachCollisionPair(tree, searchPadding, visit) {
@@ -337,11 +364,11 @@ function applyLinkSprings() {
     const spring = (distance - weightedDistance) / distance * springScale * (0.55 + link.weight * 0.65);
     const forceX = dx * spring;
     const forceY = dy * spring;
-    if (!fixed[source]) {
+    if (!isImmovable(source)) {
       vx[source] += forceX;
       vy[source] += forceY;
     }
-    if (!fixed[target]) {
+    if (!isImmovable(target)) {
       vx[target] -= forceX;
       vy[target] -= forceY;
     }
@@ -361,7 +388,7 @@ function integrate(count) {
   const recentering = forces.centerStrength * 0.0045 * alpha;
   const damping = 0.865;
   for (let index = 0; index < count; index += 1) {
-    if (fixed[index]) continue;
+    if (isImmovable(index)) continue;
     const hubGravity = forces.centerStrength * (0.000006 + Math.min(20, degrees[index]) * 0.0000025) * alpha;
     vx[index] = (vx[index] - centroidX * recentering - x[index] * hubGravity) * damping;
     vy[index] = (vy[index] - centroidY * recentering - y[index] * hubGravity) * damping;

@@ -34,6 +34,11 @@ class GraphRenderer {
     this.labelPlacements = new Map();
     this.lastPlacementScale = 0;
     this.graphKey = "";
+    this.baseCandidatesKey = "";
+    this.baseCandidates = [];
+    this.searchCacheKey = "";
+    this.searchMatches = null;
+    this.searchTextById = new Map();
     this.backend = "WebGL";
   }
 
@@ -67,6 +72,7 @@ class GraphRenderer {
     const { camera } = state;
     this.cameraRoot.position.set(camera.x, camera.y);
     this.cameraRoot.scale.set(camera.scale);
+    this.prepareCaches(state);
     this.drawLinks(state);
     this.drawNodes(state);
     this.drawLabels(state);
@@ -78,8 +84,50 @@ class GraphRenderer {
     this.app.renderer.resize(Math.max(1, width), Math.max(1, height));
   }
 
+  clear() {
+    this.linksGraphics.clear();
+    this.arrowsGraphics.clear();
+    this.nodesGraphics.clear();
+    this.emphasisGraphics.clear();
+    for (const label of this.labelPool) label.visible = false;
+    this.labelPlacements.clear();
+    this.graphKey = "";
+    this.lastPlacementScale = 0;
+    this.baseCandidatesKey = "";
+    this.baseCandidates = [];
+    this.searchCacheKey = "";
+    this.searchMatches = null;
+    this.searchTextById.clear();
+    this.app.renderer.render(this.app.stage);
+  }
+
   destroy() {
     this.app.destroy(true, { children: true, texture: true });
+  }
+
+  prepareCaches(state) {
+    const revisionKey = `${state.workerRevision}:${state.visibleNodes.length}`;
+    if (revisionKey !== this.baseCandidatesKey) {
+      this.searchTextById.clear();
+      this.baseCandidates = state.visibleNodes.map((node) => {
+        const degree = (state.incoming.get(node.id) ?? 0) + (state.outgoing.get(node.id) ?? 0);
+        const typeBonus = node.type === "tag" ? 0.7 : node.type === "note" ? 0.6 : node.type === "attachment" ? 0.42 : node.type === "unresolved" ? 0.36 : 0.28;
+        const importance = Math.min(1, degree / 12) * 0.8 + typeBonus * 0.2;
+        this.searchTextById.set(node.id, buildSearchText(node));
+        return { node, importance };
+      }).sort((a, b) => b.importance - a.importance || String(a.node.id).localeCompare(String(b.node.id)));
+      this.baseCandidatesKey = revisionKey;
+      this.searchCacheKey = "";
+    }
+
+    const normalizedQuery = state.quickQuery.trim().toLowerCase();
+    const searchKey = `${revisionKey}:${normalizedQuery}`;
+    if (searchKey !== this.searchCacheKey) {
+      this.searchMatches = normalizedQuery
+        ? new Set(this.baseCandidates.filter(({ node }) => this.searchTextById.get(node.id)?.includes(normalizedQuery)).map(({ node }) => node.id))
+        : null;
+      this.searchCacheKey = searchKey;
+    }
   }
 
   drawLinks(state) {
@@ -133,9 +181,7 @@ class GraphRenderer {
     const emphasis = this.emphasisGraphics;
     const focusId = state.hoveredId ?? state.selectedId;
     const focusNeighbors = focusId ? state.adjacency.get(focusId) ?? new Set() : null;
-    const searchMatches = state.quickQuery
-      ? new Set(state.visibleNodes.filter((node) => quickMatch(node, state.quickQuery)).map((node) => node.id))
-      : null;
+    const searchMatches = this.searchMatches;
 
     for (const node of state.visibleNodes) {
       const focused = node.id === focusId;
@@ -173,7 +219,9 @@ class GraphRenderer {
   }
 
   drawLabels(state) {
-    const graphKey = `${state.workerRevision}:${state.visibleNodes.length}`;
+    const nodeScaleBucket = Math.round(state.nodeScale * 8);
+    const viewportBucket = `${Math.round(state.width / 160)}:${Math.round(state.height / 120)}`;
+    const graphKey = `${state.workerRevision}:${state.visibleNodes.length}:${nodeScaleBucket}:${viewportBucket}`;
     const scaleChanged = Math.abs(Math.log2(Math.max(0.01, state.camera.scale) / Math.max(0.01, this.lastPlacementScale))) > 0.16;
     if (graphKey !== this.graphKey || scaleChanged) {
       this.labelPlacements.clear();
@@ -181,7 +229,7 @@ class GraphRenderer {
       this.lastPlacementScale = state.camera.scale;
     }
 
-    const candidates = buildLabelCandidates(state);
+    const candidates = this.buildLabelCandidates(state);
     const labelLimit = Math.max(12, Math.ceil(state.visibleNodes.length * Math.min(0.22, 0.11 + state.camera.scale * 0.07)));
     const grid = new LabelGrid(84, 24);
     let used = 0;
@@ -194,7 +242,7 @@ class GraphRenderer {
       };
       if (point.x < -80 || point.x > state.width + 80 || point.y < -30 || point.y > state.height + 30) continue;
 
-      const label = truncate(node.cleanName, priority >= 8 ? 55 : state.camera.scale > 1.35 ? 38 : 27);
+      const label = truncate(node.name, priority >= 8 ? 55 : state.camera.scale > 1.35 ? 38 : 27);
       const fontSize = priority >= 8 ? 11.5 : Math.min(10.5, 8.2 + state.camera.scale * 1.15);
       const width = estimateLabelWidth(label, fontSize);
       const height = fontSize + 3;
@@ -232,6 +280,34 @@ class GraphRenderer {
     }
 
     for (let index = used; index < this.labelPool.length; index += 1) this.labelPool[index].visible = false;
+  }
+
+  buildLabelCandidates(state) {
+    const candidates = [];
+    const added = new Set();
+    const addPriority = (id, priority) => {
+      if (!id || added.has(id)) return;
+      const node = state.visibleById.get(id);
+      if (!node) return;
+      candidates.push({ node, importance: 0, priority });
+      added.add(id);
+    };
+
+    addPriority(state.hoveredId, 10);
+    addPriority(state.selectedId, 10);
+    if (this.searchMatches) {
+      for (const { node } of this.baseCandidates) {
+        if (this.searchMatches.has(node.id)) addPriority(node.id, 9);
+      }
+    }
+    if (state.mode === "local") addPriority(state.localRoot, 8);
+
+    const zoomBonus = Math.max(0, Math.log2(state.camera.scale + 0.3)) * 0.22;
+    for (const candidate of this.baseCandidates) {
+      if (added.has(candidate.node.id) || candidate.importance + zoomBonus < state.textFade) continue;
+      candidates.push({ ...candidate, priority: candidate.importance });
+    }
+    return candidates;
   }
 
   acquireLabel(index) {
@@ -272,26 +348,8 @@ function drawArrow(graphics, source, target, radius, scale) {
   ]);
 }
 
-function buildLabelCandidates(state) {
-  return state.visibleNodes.map((node) => {
-    const degree = (state.incoming.get(node.id) ?? 0) + (state.outgoing.get(node.id) ?? 0);
-    const typeBonus = node.type === "tag" ? 0.7 : node.type === "note" ? 0.6 : node.type === "attachment" ? 0.42 : node.type === "unresolved" ? 0.36 : 0.28;
-    const importance = Math.min(1, degree / 12) * 0.8 + typeBonus * 0.2;
-    let priority = importance;
-    if (node.id === state.hoveredId || node.id === state.selectedId) priority = 10;
-    else if (state.quickQuery && quickMatch(node, state.quickQuery)) priority = 9;
-    else if (state.mode === "local" && node.id === state.localRoot) priority = 8;
-    return { node, importance, priority };
-  }).filter(({ importance, priority }) => {
-    if (priority > 1) return true;
-    const zoomBonus = Math.max(0, Math.log2(state.camera.scale + 0.3)) * 0.22;
-    return importance + zoomBonus >= state.textFade;
-  }).sort((a, b) => b.priority - a.priority || b.importance - a.importance);
-}
-
-function quickMatch(node, query) {
-  const normalized = query.trim().toLowerCase();
-  return normalized && [node.name, node.path, node.folder, node.type, ...(node.tags ?? []), ...(node.aliases ?? [])].join(" ").toLowerCase().includes(normalized);
+function buildSearchText(node) {
+  return [node.name, node.path, node.folder, node.type, ...(node.tags ?? []), ...(node.aliases ?? [])].join(" ").toLowerCase();
 }
 
 function truncate(value, length) {

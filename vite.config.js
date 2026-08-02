@@ -8,16 +8,31 @@ const isolationHeaders = {
 };
 
 export default defineConfig(({ mode }) => {
-  const appName = mode === "unweighted-obsidian"
-    ? "unweighted-obsidian"
-    : "weighted";
+  const appsByMode = {
+    weighted: "weighted",
+    "unweighted-obsidian": "unweighted-obsidian"
+  };
+  const appName = appsByMode[mode];
+
+  if (!appName) {
+    throw new Error(`Unknown mode "${mode}". Valid modes: ${Object.keys(appsByMode).join(", ")}`);
+  }
+
   const appRoot = resolve("apps", appName);
   const dataPath = resolve(appRoot, "graph-data.js");
+
+  if (!existsSync(dataPath)) {
+    throw new Error(`Graph data file does not exist: ${dataPath}`);
+  }
+
   const plugins = [
     {
       name: "copy-graph-data",
       closeBundle() {
-        if (existsSync(dataPath)) copyFileSync(dataPath, resolve(appRoot, "dist", "graph-data.js"));
+        if (!existsSync(dataPath)) {
+          throw new Error(`Graph data file does not exist: ${dataPath}`);
+        }
+        copyFileSync(dataPath, resolve(appRoot, "dist", "graph-data.js"));
       }
     }
   ];

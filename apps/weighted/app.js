@@ -4,7 +4,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
   "use strict";
 
   const source = window.PRECOMPUTED_GRAPH_DATA;
-  if (!source?.nodes?.length || !source?.links?.length) {
+  if (!Array.isArray(source?.nodes) || source.nodes.length === 0 || !Array.isArray(source?.links)) {
     document.body.innerHTML = "<main style='padding:40px;color:#ddd;background:#202020;height:100vh'>Graph data could not be loaded.</main>";
     return;
   }
@@ -29,6 +29,8 @@ import { createGraphRenderer } from "./graph-renderer.js";
     filterSearch: $("#filter-search"),
     quickSearch: $("#quick-search"),
     quickSearchWrap: $(".floating-search"),
+    quickSearchResults: $("#quick-search-results"),
+    quickSearchCount: $("#quick-search-count"),
     groupList: $("#group-list"),
     addGroup: $("#add-group"),
     tags: $("#toggle-tags"),
@@ -47,8 +49,10 @@ import { createGraphRenderer } from "./graph-renderer.js";
     nodeLinks: $("#node-links"),
     nodeBacklinks: $("#node-backlinks"),
     nodeYear: $("#node-year"),
+    openNote: $("#open-note"),
     openLocal: $("#open-local"),
     pinNode: $("#pin-node"),
+    copyLink: $("#copy-link"),
     hoverLabel: $("#hover-label"),
     contextMenu: $("#context-menu"),
     zoomLevel: $("#zoom-level"),
@@ -94,9 +98,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     })),
     visibleNodes: [],
     visibleLinks: [],
-    layoutLinks: [],
     visibleById: new Map(),
-    visibleIndex: new Map(),
     revealIndex: new Map(),
     adjacency: new Map(),
     incoming: new Map(),
@@ -116,13 +118,17 @@ import { createGraphRenderer } from "./graph-renderer.js";
     sharedSnapshot: null,
     sharedControl: null,
     sharedSequence: 0,
-    sharedFrame: 0,
     runtimeMode: "Transfer",
-    workerStats: null,
     monitorFrame: 0,
     renderer: null,
     rendererMode: "Canvas",
     renderPending: false,
+    resizeObserver: null,
+    dprMedia: null,
+    dprListener: null,
+    quickResults: [],
+    quickActiveIndex: -1,
+    quickRestoreFocus: null,
     hasFitted: false,
     panelOpen: true,
     loadingDismissed: false,
@@ -195,12 +201,10 @@ import { createGraphRenderer } from "./graph-renderer.js";
     }
     rebuildGraph({ fit: true });
     monitorSharedPositions();
-    new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
-    window.addEventListener("beforeunload", () => {
-      cancelAnimationFrame(state.monitorFrame);
-      state.renderer?.destroy();
-      state.worker?.terminate();
-    });
+    state.resizeObserver = new ResizeObserver(() => resizeCanvas());
+    state.resizeObserver.observe(canvas.parentElement);
+    bindDprListener();
+    window.addEventListener("beforeunload", cleanup);
     setTimeout(() => {
       if (!state.loadingDismissed) dismissLoading();
     }, 2200);
@@ -337,11 +341,15 @@ import { createGraphRenderer } from "./graph-renderer.js";
 
     elements.quickSearch.addEventListener("input", () => {
       state.quickQuery = elements.quickSearch.value.trim().toLowerCase();
+      state.quickActiveIndex = state.quickQuery ? 0 : -1;
+      updateQuickSearchResults();
       scheduleRender();
     });
-    elements.quickSearch.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") focusFirstSearchResult();
-      if (event.key === "Escape") closeQuickSearch();
+    elements.quickSearch.addEventListener("keydown", handleQuickSearchKeyDown);
+    elements.quickSearchResults.addEventListener("pointerdown", (event) => event.preventDefault());
+    elements.quickSearchResults.addEventListener("click", (event) => {
+      const option = event.target.closest("[role='option']");
+      if (option) chooseQuickResult(Number(option.dataset.index));
     });
 
     elements.tags.addEventListener("change", () => {
@@ -405,11 +413,17 @@ import { createGraphRenderer } from "./graph-renderer.js";
     $$(".mode-button").forEach((button) => button.addEventListener("click", () => setMode(button.dataset.mode)));
 
     elements.nodeCardClose.addEventListener("click", clearSelection);
+    elements.openNote.addEventListener("click", () => {
+      if (state.selectedId) openNote(state.selectedId);
+    });
     elements.openLocal.addEventListener("click", () => {
       if (state.selectedId) openLocalGraph(state.selectedId);
     });
     elements.pinNode.addEventListener("click", () => {
       if (state.selectedId) togglePin(state.selectedId);
+    });
+    elements.copyLink.addEventListener("click", () => {
+      if (state.selectedId) copyNodeLink(state.selectedId);
     });
 
     $(".ribbon-button[aria-label='Search']").addEventListener("click", openQuickSearch);
@@ -511,8 +525,9 @@ import { createGraphRenderer } from "./graph-renderer.js";
     if (node) {
       state.draggingId = node.id;
       const world = screenToWorld(point.x, point.y);
-      updateNodePosition(node.id, world.x, world.y);
-      state.worker.postMessage({ type: "drag", id: node.id, x: world.x, y: world.y });
+      state.pointer.offsetX = node.x - world.x;
+      state.pointer.offsetY = node.y - world.y;
+      state.worker.postMessage({ type: "drag", id: node.id, x: node.x, y: node.y });
     } else {
       state.panning = true;
     }
@@ -529,8 +544,10 @@ import { createGraphRenderer } from "./graph-renderer.js";
 
       if (state.draggingId) {
         const world = screenToWorld(point.x, point.y);
-        updateNodePosition(state.draggingId, world.x, world.y);
-        state.worker.postMessage({ type: "drag", id: state.draggingId, x: world.x, y: world.y });
+        const x = world.x + state.pointer.offsetX;
+        const y = world.y + state.pointer.offsetY;
+        updateNodePosition(state.draggingId, x, y);
+        state.worker.postMessage({ type: "drag", id: state.draggingId, x, y });
       } else if (state.panning) {
         state.camera.x += dx;
         state.camera.y += dy;
@@ -548,7 +565,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     const releasedId = state.draggingId;
     const wasMoved = state.dragMoved;
     if (releasedId) {
-      state.worker.postMessage({ type: "release", id: releasedId, pinned: state.pinned.has(releasedId) });
+      state.worker.postMessage({ type: "release", id: releasedId, pinned: state.pinned.has(releasedId), anchored: isAnchored(releasedId) });
       if (!wasMoved) selectNode(releasedId);
     } else if (!wasMoved) {
       clearSelection();
@@ -578,29 +595,29 @@ import { createGraphRenderer } from "./graph-renderer.js";
     }
     state.contextId = node.id;
     const point = canvasPoint(event.clientX, event.clientY);
-    const menuWidth = 190;
-    const menuHeight = 132;
-    elements.contextMenu.style.left = `${Math.min(point.x, state.width - menuWidth - 8)}px`;
-    elements.contextMenu.style.top = `${Math.min(point.y, state.height - menuHeight - 8)}px`;
+    elements.contextMenu.style.left = "0px";
+    elements.contextMenu.style.top = "0px";
     const pinLabel = $("[data-action='pin'] span", elements.contextMenu);
     pinLabel.textContent = state.pinned.has(node.id) ? "Unpin node" : "Pin node";
+    elements.contextMenu.style.visibility = "hidden";
     elements.contextMenu.hidden = false;
+    const { width, height } = elements.contextMenu.getBoundingClientRect();
+    elements.contextMenu.style.left = `${Math.max(8, Math.min(point.x, state.width - width - 8))}px`;
+    elements.contextMenu.style.top = `${Math.max(8, Math.min(point.y, state.height - height - 8))}px`;
+    elements.contextMenu.style.visibility = "visible";
   }
 
   function handleContextAction(action, id) {
     const node = state.visibleById.get(id) ?? allNodeLookup.get(id);
     if (!node) return;
     if (action === "open") {
-      selectNode(id);
-      showToast(`Opened “${node.cleanName}”`);
+      openNote(id);
     } else if (action === "local") {
       openLocalGraph(id);
     } else if (action === "pin") {
       togglePin(id);
     } else if (action === "copy") {
-      const link = `[[${node.cleanName}]]`;
-      navigator.clipboard?.writeText(link).catch(() => {});
-      showToast(`Copied ${link}`);
+      copyNodeLink(id);
     }
   }
 
@@ -672,35 +689,27 @@ import { createGraphRenderer } from "./graph-renderer.js";
     }
 
     if (!state.showOrphans) {
-      const connected = new Set();
-      poolLinks.forEach((link) => {
-        if (allowedIds.has(link.source) && allowedIds.has(link.target)) {
-          connected.add(link.source);
-          connected.add(link.target);
-        }
-      });
-      allowedIds = new Set([...allowedIds].filter((id) => connected.has(id) || id === state.localRoot));
+      allowedIds = new Set([...allowedIds].filter((id) => poolById.get(id)?.type !== "orphan" || id === state.localRoot));
     }
 
     state.visibleNodes = [...allowedIds].map((id) => ({ ...poolById.get(id) }));
     state.visibleLinks = poolLinks.filter((link) => allowedIds.has(link.source) && allowedIds.has(link.target));
     state.visibleById = new Map(state.visibleNodes.map((node) => [node.id, node]));
-    state.visibleIndex = new Map(state.visibleNodes.map((node, index) => [node.id, index]));
     state.revealIndex = new Map([...state.visibleNodes]
       .sort((a, b) => a.createdOrder - b.createdOrder)
       .map((node, index) => [node.id, index]));
     buildAdjacency();
     applyGroupColors();
 
-    state.layoutLinks = [...state.visibleLinks];
-
     if (state.selectedId && !state.visibleById.has(state.selectedId)) clearSelection();
     if (state.hoveredId && !state.visibleById.has(state.hoveredId)) setHovered(null);
     initializeWorkerLayout();
     updateCounts();
+    updateQuickSearchResults();
     renderGroupList();
     state.hasFitted = !fit && state.hasFitted;
     if (fit) state.hasFitted = false;
+    if (!state.visibleNodes.length) dismissLoading();
     scheduleRender();
   }
 
@@ -789,7 +798,6 @@ import { createGraphRenderer } from "./graph-renderer.js";
       state.sharedSnapshot = new Float32Array(state.sharedPositions.length);
       state.sharedControl = new Int32Array(controlBuffer);
       state.sharedSequence = 0;
-      state.sharedFrame = 0;
       state.runtimeMode = "Shared";
     } else {
       state.sharedPositions = null;
@@ -799,17 +807,18 @@ import { createGraphRenderer } from "./graph-renderer.js";
     }
 
     const nodes = state.visibleNodes.map((node) => {
-      const cached = state.positionCache.get(node.id) ?? initialPosition(node);
+      const anchored = isAnchored(node.id);
+      const cached = anchored ? { x: 0, y: 0 } : getCachedPosition(node.id) ?? initialPosition(node);
       node.x = cached.x;
       node.y = cached.y;
-      return { id: node.id, x: node.x, y: node.y, radius: node.radius * state.nodeScale, pinned: state.pinned.has(node.id) };
+      return { id: node.id, x: node.x, y: node.y, radius: node.radius * state.nodeScale, pinned: state.pinned.has(node.id), anchored };
     });
 
     state.worker.postMessage({
       type: "init",
       revision,
       nodes,
-      links: state.layoutLinks,
+      links: state.visibleLinks,
       forces: state.forces,
       sharedBuffer,
       controlBuffer
@@ -848,9 +857,12 @@ import { createGraphRenderer } from "./graph-renderer.js";
     } else if (data.type === "status") {
       setWorkerStatus(data.status);
     } else if (data.type === "stats") {
-      state.workerStats = data;
-      elements.workerStatus.title = `Barnes–Hut ${data.tickMs.toFixed(2)}ms · tree ${data.treeMs.toFixed(2)}ms · ${data.exactChecks.toLocaleString()} exact checks · ${data.overlapCount.toLocaleString()} overlaps · max ${data.maxOverlap.toFixed(2)}px · ${data.collisionIterations} collision passes`;
+      elements.workerStatus.title = `Barnes–Hut ${safeNumber(data.tickMs).toFixed(2)}ms · tree ${safeNumber(data.treeMs).toFixed(2)}ms · ${safeNumber(data.exactChecks).toLocaleString()} exact checks · ${safeNumber(data.overlapCount).toLocaleString()} overlaps · ${safeNumber(data.blockedOverlapCount).toLocaleString()} blocked overlaps · max ${safeNumber(data.maxOverlap).toFixed(2)}px · ${safeNumber(data.collisionIterations).toLocaleString()} collision passes`;
     } else if (data.type === "ready") {
+      if (data.protocolVersion !== 5) {
+        handleLayoutUnavailable(`Unsupported graph worker protocol ${data.protocolVersion ?? "unknown"}; expected 5`);
+        return;
+      }
       state.runtimeMode = data.shared ? "Shared" : "Transfer";
       setWorkerStatus("active");
     }
@@ -865,7 +877,6 @@ import { createGraphRenderer } from "./graph-renderer.js";
         const sequenceAfter = Atomics.load(state.sharedControl, 0);
         if (sequenceBefore === sequenceAfter) {
           state.sharedSequence = sequenceAfter;
-          state.sharedFrame = frame;
           consumePositions(state.sharedSnapshot, frame);
         }
       }
@@ -878,7 +889,6 @@ import { createGraphRenderer } from "./graph-renderer.js";
     state.visibleNodes.forEach((node, index) => {
       node.x = positions[index * 2];
       node.y = positions[index * 2 + 1];
-      state.positionCache.set(node.id, { x: node.x, y: node.y });
     });
     if (!state.hasFitted && frame >= 6) {
       fitGraph(false);
@@ -890,14 +900,19 @@ import { createGraphRenderer } from "./graph-renderer.js";
 
   function handleWorkerError(error) {
     console.error("Graph worker failed", error);
+    handleLayoutUnavailable(error.message);
+  }
+
+  function handleLayoutUnavailable(detail) {
     elements.workerStatus.textContent = "Layout unavailable";
+    elements.workerStatus.title = detail || "The graph layout worker is unavailable";
     elements.statusPulse.classList.remove("is-active");
     dismissLoading();
   }
 
   function cacheCurrentPositions() {
     state.visibleNodes.forEach((node) => {
-      if (Number.isFinite(node.x) && Number.isFinite(node.y)) state.positionCache.set(node.id, { x: node.x, y: node.y });
+      if (Number.isFinite(node.x) && Number.isFinite(node.y)) setCachedPosition(node.id, node.x, node.y);
     });
   }
 
@@ -906,7 +921,23 @@ import { createGraphRenderer } from "./graph-renderer.js";
     if (!node) return;
     node.x = x;
     node.y = y;
-    state.positionCache.set(id, { x, y });
+    setCachedPosition(id, x, y);
+  }
+
+  function positionScope(id) {
+    return state.mode === "local" ? `local:${state.localRoot}:${id}` : `global:${id}`;
+  }
+
+  function getCachedPosition(id) {
+    return state.positionCache.get(positionScope(id));
+  }
+
+  function setCachedPosition(id, x, y) {
+    state.positionCache.set(positionScope(id), { x, y });
+  }
+
+  function isAnchored(id) {
+    return state.mode === "local" && id === state.localRoot;
   }
 
   function setWorkerStatus(status) {
@@ -915,7 +946,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     elements.statusPulse.classList.toggle("is-active", active);
   }
 
-  function resizeCanvas() {
+  function resizeCanvas({ preserveCamera = false } = {}) {
     const bounds = canvas.parentElement.getBoundingClientRect();
     const previousWidth = state.width;
     const previousHeight = state.height;
@@ -927,6 +958,10 @@ import { createGraphRenderer } from "./graph-renderer.js";
     canvas.style.width = `${state.width}px`;
     canvas.style.height = `${state.height}px`;
     state.renderer?.resize(state.width, state.height, state.dpr);
+    if (preserveCamera) {
+      scheduleRender();
+      return;
+    }
     if (previousWidth > 1) {
       state.camera.x += (state.width - previousWidth) / 2;
       state.camera.y += (state.height - previousHeight) / 2;
@@ -935,6 +970,25 @@ import { createGraphRenderer } from "./graph-renderer.js";
       state.camera.y = state.height / 2;
     }
     scheduleRender();
+  }
+
+  function bindDprListener() {
+    state.dprMedia?.removeEventListener("change", state.dprListener);
+    state.dprMedia = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    state.dprListener = () => {
+      resizeCanvas({ preserveCamera: true });
+      bindDprListener();
+    };
+    state.dprMedia.addEventListener("change", state.dprListener, { once: true });
+  }
+
+  function cleanup() {
+    cancelAnimationFrame(state.monitorFrame);
+    cancelAnimationFrame(state.animation.frame);
+    state.resizeObserver?.disconnect();
+    state.dprMedia?.removeEventListener("change", state.dprListener);
+    state.renderer?.destroy();
+    state.worker?.terminate();
   }
 
   function scheduleRender() {
@@ -948,8 +1002,10 @@ import { createGraphRenderer } from "./graph-renderer.js";
     if (state.renderer) {
       context.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
       context.clearRect(0, 0, state.width, state.height);
-      if (!state.visibleNodes.length) renderEmptyState();
-      else state.renderer.render(state);
+      if (!state.visibleNodes.length) {
+        state.renderer.clear();
+        renderEmptyState();
+      } else state.renderer.render(state);
       return;
     }
 
@@ -1370,6 +1426,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
   function tickAnimation(now) {
     if (!state.animation.active) return;
     state.animation.progress = Math.min(1, (now - state.animation.startedAt) / state.animation.duration);
+    if (state.quickQuery) updateQuickSearchResults();
     scheduleRender();
     const visible = Math.max(1, Math.floor(state.visibleNodes.length * state.animation.progress));
     elements.graphCount.textContent = `${visible} / ${state.visibleNodes.length} nodes · timeline`;
@@ -1442,34 +1499,117 @@ import { createGraphRenderer } from "./graph-renderer.js";
   }
 
   function openQuickSearch() {
+    state.quickRestoreFocus = document.activeElement;
     elements.quickSearchWrap.classList.add("is-visible");
     elements.quickSearch.focus();
     elements.quickSearch.select();
+    updateQuickSearchResults();
   }
 
-  function closeQuickSearch() {
+  function closeQuickSearch({ restoreFocus = true } = {}) {
     state.quickQuery = "";
+    state.quickResults = [];
+    state.quickActiveIndex = -1;
     elements.quickSearch.value = "";
     elements.quickSearchWrap.classList.remove("is-visible");
+    elements.quickSearchResults.hidden = true;
+    elements.quickSearch.setAttribute("aria-expanded", "false");
+    elements.quickSearch.setAttribute("aria-activedescendant", "");
     elements.quickSearch.blur();
+    if (restoreFocus && state.quickRestoreFocus instanceof HTMLElement) state.quickRestoreFocus.focus();
+    state.quickRestoreFocus = null;
     scheduleRender();
   }
 
-  function focusFirstSearchResult() {
-    const result = state.visibleNodes
-      .filter(matchesQuickSearch)
-      .sort((a, b) => (b.val ?? 0) - (a.val ?? 0))[0];
+  function handleQuickSearchKeyDown(event) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!state.quickResults.length) return;
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      state.quickActiveIndex = (state.quickActiveIndex + direction + state.quickResults.length) % state.quickResults.length;
+      renderQuickSearchResults();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      chooseQuickResult(state.quickActiveIndex < 0 ? 0 : state.quickActiveIndex);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeQuickSearch();
+    }
+  }
+
+  function updateQuickSearchResults() {
+    const cutoff = getRevealCutoff();
+    state.quickResults = state.quickQuery ? state.visibleNodes
+      .filter((node) => node.createdOrder <= cutoff && matchesQuickSearch(node))
+      .sort((a, b) => (b.val ?? 0) - (a.val ?? 0))
+      .slice(0, 20) : [];
+    if (state.quickActiveIndex >= state.quickResults.length) state.quickActiveIndex = state.quickResults.length ? 0 : -1;
+    elements.quickSearchCount.textContent = state.quickQuery ? `${state.quickResults.length} search results` : "";
+    renderQuickSearchResults();
+  }
+
+  function renderQuickSearchResults() {
+    elements.quickSearchResults.replaceChildren(...state.quickResults.map((node, index) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.id = `quick-result-${index}`;
+      option.dataset.index = String(index);
+      option.className = "quick-search-option";
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", String(index === state.quickActiveIndex));
+      const title = document.createElement("span");
+      title.textContent = node.cleanName;
+      const path = document.createElement("small");
+      path.textContent = node.path;
+      option.append(title, path);
+      return option;
+    }));
+    const open = Boolean(state.quickQuery && state.quickResults.length);
+    elements.quickSearchResults.hidden = !open;
+    elements.quickSearch.setAttribute("aria-expanded", String(open));
+    elements.quickSearch.setAttribute("aria-activedescendant", state.quickActiveIndex >= 0 ? `quick-result-${state.quickActiveIndex}` : "");
+    elements.quickSearchResults.children[state.quickActiveIndex]?.scrollIntoView({ block: "nearest" });
+  }
+
+  function chooseQuickResult(index) {
+    const result = state.quickResults[index];
     if (!result) {
       showToast("No matching note");
       return;
     }
     selectNode(result.id);
     centerOnNode(result.id);
+    closeQuickSearch();
   }
 
   function matchesQuickSearch(node) {
     if (!state.quickQuery) return false;
     return `${node.name} ${node.topic} ${node.path}`.toLowerCase().includes(state.quickQuery);
+  }
+
+  function openNote(id) {
+    const node = state.visibleById.get(id) ?? allNodeLookup.get(id);
+    if (!node) return;
+    selectNode(id);
+    showToast(`Opened “${node.cleanName}”`);
+  }
+
+  async function copyNodeLink(id) {
+    const node = state.visibleById.get(id) ?? allNodeLookup.get(id);
+    if (!node) return;
+    const link = `[[${node.cleanName}]]`;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+      await navigator.clipboard.writeText(link);
+      showToast(`Copied ${link}`);
+    } catch (error) {
+      console.warn("Copy failed", error);
+      showToast("Could not copy link");
+    }
+  }
+
+  function safeNumber(value) {
+    return Number.isFinite(Number(value)) ? Number(value) : 0;
   }
 
   function hideContextMenu() {
