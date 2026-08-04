@@ -51,7 +51,22 @@ export default defineConfig(({ mode }) => {
     build: {
       target: "es2022",
       outDir: resolve(appRoot, "dist"),
-      emptyOutDir: true
+      emptyOutDir: true,
+      rollupOptions: appName === "unweighted-obsidian" ? {
+        input: {
+          index: resolve(appRoot, "index.html"),
+          comparison: resolve(appRoot, "comparison.html"),
+          editorialAtlas: resolve(appRoot, "editorial-atlas.html"),
+          luminousMap: resolve(appRoot, "luminous-map.html"),
+          researchConsole: resolve(appRoot, "research-console.html"),
+          obsidianEcho: resolve(appRoot, "obsidian-echo.html"),
+          nodeMaterials: resolve(appRoot, "node-materials.html"),
+          materialMineralGlaze: resolve(appRoot, "material-mineral-glaze.html"),
+          materialEnamelDoubleLine: resolve(appRoot, "material-enamel-double-line.html"),
+          materialInkBloom: resolve(appRoot, "material-ink-bloom.html"),
+          materialPrecisionMetal: resolve(appRoot, "material-precision-metal.html")
+        }
+      } : undefined
     }
   };
 });

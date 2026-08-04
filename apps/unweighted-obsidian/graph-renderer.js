@@ -26,9 +26,13 @@ class GraphRenderer {
     this.nodesLayer = new Container();
     this.emphasisLayer = new Container();
     this.labelsLayer = new Container();
+    this.linkUnderlayGraphics = new Graphics();
     this.linksGraphics = new Graphics();
     this.arrowsGraphics = new Graphics();
+    this.nodeAuraGraphics = new Graphics();
+    this.nodeRimGraphics = new Graphics();
     this.nodesGraphics = new Graphics();
+    this.nodeDetailGraphics = new Graphics();
     this.emphasisGraphics = new Graphics();
     this.labelPool = [];
     this.labelPlacements = new Map();
@@ -40,6 +44,7 @@ class GraphRenderer {
     this.searchMatches = null;
     this.searchTextById = new Map();
     this.backend = "WebGL";
+    this.theme = readVisualTheme();
   }
 
   async initialize() {
@@ -58,9 +63,9 @@ class GraphRenderer {
     this.app.canvas.className = "pixi-graph-canvas";
     this.app.canvas.setAttribute("aria-hidden", "true");
     this.host.insertBefore(this.app.canvas, this.interactionCanvas);
-    this.linksLayer.addChild(this.linksGraphics);
+    this.linksLayer.addChild(this.linkUnderlayGraphics, this.linksGraphics);
     this.arrowsLayer.addChild(this.arrowsGraphics);
-    this.nodesLayer.addChild(this.nodesGraphics);
+    this.nodesLayer.addChild(this.nodeAuraGraphics, this.nodeRimGraphics, this.nodesGraphics, this.nodeDetailGraphics);
     this.emphasisLayer.addChild(this.emphasisGraphics);
     this.cameraRoot.addChild(this.linksLayer, this.arrowsLayer, this.nodesLayer, this.emphasisLayer, this.labelsLayer);
     this.app.stage.addChild(this.cameraRoot);
@@ -85,9 +90,13 @@ class GraphRenderer {
   }
 
   clear() {
+    this.linkUnderlayGraphics.clear();
     this.linksGraphics.clear();
     this.arrowsGraphics.clear();
+    this.nodeAuraGraphics.clear();
+    this.nodeRimGraphics.clear();
     this.nodesGraphics.clear();
+    this.nodeDetailGraphics.clear();
     this.emphasisGraphics.clear();
     for (const label of this.labelPool) label.visible = false;
     this.labelPlacements.clear();
@@ -131,6 +140,7 @@ class GraphRenderer {
   }
 
   drawLinks(state) {
+    const underlay = this.linkUnderlayGraphics.clear();
     const normal = this.linksGraphics.clear();
     const emphasis = this.emphasisGraphics.clear();
     const arrows = this.arrowsGraphics.clear();
@@ -147,6 +157,7 @@ class GraphRenderer {
       const connected = focusId && (link.source === focusId || link.target === focusId);
       const graphics = connected ? emphasis : normal;
       graphics.moveTo(source.x, source.y).lineTo(target.x, target.y);
+      if (this.theme.material) underlay.moveTo(source.x, source.y).lineTo(target.x, target.y);
       if (connected) hasEmphasis = true;
       else hasNormal = true;
 
@@ -157,31 +168,43 @@ class GraphRenderer {
     }
 
     const inverseScale = 1 / Math.max(0.18, state.camera.scale);
+    if (this.theme.material && (hasNormal || hasEmphasis)) {
+      underlay.stroke({
+        color: this.theme.edgeUnderlay,
+        alpha: focusId ? this.theme.edgeUnderlayAlpha * 0.55 : this.theme.edgeUnderlayAlpha,
+        width: this.theme.edgeUnderlayWidth * state.linkThickness * inverseScale,
+        cap: "round"
+      });
+    }
     if (hasNormal) {
       normal.stroke({
-        color: 0x868581,
-        alpha: focusId ? 0.018 : 0.115,
-        width: Math.max(0.36, state.linkThickness * 0.62) * inverseScale,
+        color: this.theme.link,
+        alpha: focusId ? this.theme.edgeFadedAlpha : this.theme.edgeAlpha,
+        width: Math.max(0.36, state.linkThickness * (this.theme.material ? this.theme.edgeMainWidth : 0.62)) * inverseScale,
         cap: "round"
       });
     }
     if (hasEmphasis) {
       emphasis.stroke({
-        color: 0xc2bad3,
-        alpha: 0.62,
-        width: state.linkThickness * 1.16 * inverseScale,
+        color: this.theme.linkFocus,
+        alpha: this.theme.edgeFocusAlpha,
+        width: state.linkThickness * (this.theme.material ? this.theme.edgeFocusWidth : 1.16) * inverseScale,
         cap: "round"
       });
     }
-    if (hasArrows) arrows.fill({ color: 0xaaa5b0, alpha: focusId ? 0.7 : 0.3 });
+    if (hasArrows) arrows.fill({ color: this.theme.arrow, alpha: focusId ? 0.7 : 0.3 });
   }
 
   drawNodes(state) {
+    const aura = this.nodeAuraGraphics.clear();
+    const rims = this.nodeRimGraphics.clear();
     const nodes = this.nodesGraphics.clear();
+    const details = this.nodeDetailGraphics.clear();
     const emphasis = this.emphasisGraphics;
     const focusId = state.hoveredId ?? state.selectedId;
     const focusNeighbors = focusId ? state.adjacency.get(focusId) ?? new Set() : null;
     const searchMatches = this.searchMatches;
+    const inverseScale = 1 / Math.max(0.18, state.camera.scale);
 
     for (const node of state.visibleNodes) {
       const focused = node.id === focusId;
@@ -190,29 +213,55 @@ class GraphRenderer {
       const searchMatch = searchMatches?.has(node.id);
       const faded = focusId && !focused && !neighbor;
       const searchFaded = searchMatches?.size && !searchMatch;
-      const alpha = faded ? 0.12 : searchFaded ? 0.17 : node.type === "orphan" ? 0.48 : 0.86;
-      const radius = Math.max(1.1 / state.camera.scale, node.radius * state.nodeScale);
+      const alpha = faded ? this.theme.nodeFadedAlpha : searchFaded ? this.theme.nodeSearchFadedAlpha : node.type === "orphan" ? 0.48 : this.theme.nodeAlpha;
+      const radius = Math.max(1.1 * inverseScale, node.radius * state.nodeScale);
 
-      if (node.type === "attachment") {
-        const size = radius * 1.42;
-        nodes.rect(node.x - size / 2, node.y - size / 2, size, size).fill({ color: node.color, alpha: alpha * 0.78 });
-      } else if (node.type === "unresolved") {
-        nodes.circle(node.x, node.y, radius).stroke({ color: node.color, alpha: alpha * 0.82, width: 1 / state.camera.scale });
-      } else if (node.type === "tag") {
-        nodes.regularPoly(node.x, node.y, radius, 6).fill({ color: node.color, alpha: alpha * 0.86 });
+      if (this.theme.material) {
+        const offset = materialOffset(node.id, radius * this.theme.auraOffset);
+        if (this.theme.auraAlpha > 0) {
+          aura.circle(node.x + offset.x, node.y + offset.y, radius * this.theme.auraScale)
+            .fill({ color: node.color, alpha: alpha * this.theme.auraAlpha });
+        }
+        drawNodeShape(rims, node, node.x, node.y, radius + this.theme.rimWidth * inverseScale)
+          .stroke({ color: this.theme.rimColor, alpha: alpha * this.theme.rimAlpha, width: this.theme.rimWidth * inverseScale });
+        if (node.type === "unresolved") {
+          drawNodeShape(nodes, node, node.x, node.y, radius)
+            .stroke({ color: node.color, alpha: alpha * this.theme.nodeFillAlpha, width: Math.max(inverseScale, this.theme.keylineWidth * inverseScale) });
+        } else {
+          drawNodeShape(nodes, node, node.x, node.y, radius)
+            .fill({ color: node.color, alpha: alpha * this.theme.nodeFillAlpha });
+          drawNodeShape(details, node, node.x, node.y, Math.max(inverseScale, radius - this.theme.keylineWidth * inverseScale * 0.5))
+            .stroke({ color: this.theme.keylineColor, alpha: alpha * this.theme.keylineAlpha, width: this.theme.keylineWidth * inverseScale });
+          if (radius * state.camera.scale >= 3.2 && this.theme.coreAlpha > 0) {
+            details.circle(
+              node.x + radius * this.theme.coreOffsetX,
+              node.y + radius * this.theme.coreOffsetY,
+              Math.max(0.55 * inverseScale, radius * this.theme.coreScale)
+            ).fill({ color: this.theme.coreColor, alpha: alpha * this.theme.coreAlpha });
+          }
+        }
       } else {
-        nodes.circle(node.x, node.y, radius).fill({ color: node.color, alpha });
+        if (node.type === "attachment") {
+          const size = radius * 1.42;
+          nodes.rect(node.x - size / 2, node.y - size / 2, size, size).fill({ color: node.color, alpha: alpha * 0.78 });
+        } else if (node.type === "unresolved") {
+          nodes.circle(node.x, node.y, radius).stroke({ color: node.color, alpha: alpha * 0.82, width: inverseScale });
+        } else if (node.type === "tag") {
+          nodes.regularPoly(node.x, node.y, radius, 6).fill({ color: node.color, alpha: alpha * 0.86 });
+        } else {
+          nodes.circle(node.x, node.y, radius).fill({ color: node.color, alpha });
+        }
       }
 
       if (focused || selected || searchMatch) {
-        emphasis.circle(node.x, node.y, radius * (selected ? 2.25 : 1.9) + 2 / state.camera.scale)
+        emphasis.circle(node.x, node.y, radius * (selected ? 2.25 : 1.9) + 2 * inverseScale)
           .fill({ color: node.color, alpha: selected ? 0.13 : 0.09 });
       }
       if (selected || state.pinned.has(node.id)) {
-        emphasis.circle(node.x, node.y, radius + 2.6 / state.camera.scale).stroke({
-          color: selected ? 0xe5dffc : 0xb0a3ce,
-          alpha: selected ? 0.78 : 0.52,
-          width: (selected ? 1.15 : 0.8) / state.camera.scale
+        emphasis.circle(node.x, node.y, radius + (this.theme.material ? this.theme.ringGap : 2.6) * inverseScale).stroke({
+          color: selected ? this.theme.selection : this.theme.pinned,
+          alpha: selected ? this.theme.selectionAlpha : 0.52,
+          width: (this.theme.material ? this.theme.ringWidth : selected ? 1.15 : 0.8) * inverseScale
         });
       }
     }
@@ -243,7 +292,7 @@ class GraphRenderer {
       if (point.x < -80 || point.x > state.width + 80 || point.y < -30 || point.y > state.height + 30) continue;
 
       const label = truncate(node.name, priority >= 8 ? 55 : state.camera.scale > 1.35 ? 38 : 27);
-      const fontSize = priority >= 8 ? 11.5 : Math.min(10.5, 8.2 + state.camera.scale * 1.15);
+      const fontSize = (priority >= 8 ? 11.5 : Math.min(10.5, 8.2 + state.camera.scale * 1.15)) * this.theme.labelSize;
       const width = estimateLabelWidth(label, fontSize);
       const height = fontSize + 3;
       const nodeRadius = Math.max(2, node.radius * state.nodeScale * state.camera.scale);
@@ -266,9 +315,9 @@ class GraphRenderer {
       const text = this.acquireLabel(used);
       text.text = label;
       text.style.fontSize = fontSize;
-      text.style.fill = priority >= 8 ? 0xe7e3eb : 0xb4b0ab;
+      text.style.fill = priority >= 8 ? this.theme.labelFocus : this.theme.label;
       const focusId = state.hoveredId ?? state.selectedId;
-      text.alpha = priority >= 8 ? 0.94 : focusId && node.id !== focusId && !state.adjacency.get(focusId)?.has(node.id) ? 0.08 : 0.55;
+      text.alpha = priority >= 8 ? 0.94 : focusId && node.id !== focusId && !state.adjacency.get(focusId)?.has(node.id) ? this.theme.labelFadedAlpha : this.theme.labelAlpha;
       text.position.set(
         (placement.rect.x - state.camera.x) / state.camera.scale,
         (placement.rect.y + height / 2 - state.camera.y) / state.camera.scale
@@ -315,9 +364,9 @@ class GraphRenderer {
       const label = new BitmapText({
         text: "",
         style: {
-          fontFamily: "Segoe UI Variable Text",
+          fontFamily: this.theme.fontFamily,
           fontSize: 10,
-          fill: 0xb4b0ab
+          fill: this.theme.label
         }
       });
       label.eventMode = "none";
@@ -326,6 +375,23 @@ class GraphRenderer {
     }
     return this.labelPool[index];
   }
+}
+
+function drawNodeShape(graphics, node, x, y, radius) {
+  if (node.type === "attachment") {
+    const size = radius * 1.42;
+    return graphics.rect(x - size / 2, y - size / 2, size, size);
+  }
+  if (node.type === "tag") return graphics.regularPoly(x, y, radius, 6);
+  return graphics.circle(x, y, radius);
+}
+
+function materialOffset(id, amount) {
+  if (!amount) return { x: 0, y: 0 };
+  let hash = 2166136261;
+  for (let index = 0; index < id.length; index += 1) hash = Math.imul(hash ^ id.charCodeAt(index), 16777619);
+  const angle = (hash >>> 0) / 0xffffffff * Math.PI * 2;
+  return { x: Math.cos(angle) * amount, y: Math.sin(angle) * amount };
 }
 
 function drawArrow(graphics, source, target, radius, scale) {
@@ -346,6 +412,62 @@ function drawArrow(graphics, source, target, radius, scale) {
     tipX - ux * size + uy * size * 0.72,
     tipY - uy * size - ux * size * 0.72
   ]);
+}
+
+function readVisualTheme() {
+  const style = getComputedStyle(document.documentElement);
+  const color = (name, fallback) => parseCssColor(style.getPropertyValue(name).trim() || fallback);
+  const number = (name, fallback) => Number.parseFloat(style.getPropertyValue(name)) || fallback;
+  return {
+    material: Boolean(document.body.dataset.material),
+    link: color("--graph-link", "#868581"),
+    linkFocus: color("--graph-link-focus", "#c2bad3"),
+    arrow: color("--graph-arrow", "#aaa5b0"),
+    selection: color("--graph-selection", "#e5dffc"),
+    pinned: color("--graph-pinned", "#b0a3ce"),
+    label: color("--graph-label", "#b4b0ab"),
+    labelFocus: color("--graph-label-focus", "#e7e3eb"),
+    edgeAlpha: number("--graph-edge-alpha", 0.115),
+    edgeFadedAlpha: number("--graph-edge-faded-alpha", 0.018),
+    edgeFocusAlpha: number("--graph-edge-focus-alpha", 0.62),
+    nodeAlpha: number("--graph-node-alpha", 0.86),
+    nodeFadedAlpha: number("--graph-node-faded-alpha", 0.12),
+    nodeSearchFadedAlpha: number("--graph-node-search-faded-alpha", 0.17),
+    labelAlpha: number("--graph-label-alpha", 0.57),
+    labelFadedAlpha: number("--graph-label-faded-alpha", 0.08),
+    labelSize: number("--graph-label-size", 1),
+    selectionAlpha: number("--graph-selection-alpha", 0.78),
+    nodeFillAlpha: number("--material-node-fill-alpha", 1),
+    rimColor: color("--material-rim-color", "#ffffff"),
+    rimAlpha: number("--material-rim-alpha", 0),
+    rimWidth: number("--material-rim-width", 0),
+    keylineColor: color("--material-keyline-color", "#000000"),
+    keylineAlpha: number("--material-keyline-alpha", 0),
+    keylineWidth: number("--material-keyline-width", 0),
+    coreColor: color("--material-core-color", "#ffffff"),
+    coreAlpha: number("--material-core-alpha", 0),
+    coreScale: number("--material-core-scale", 0.25),
+    coreOffsetX: number("--material-core-offset-x", 0),
+    coreOffsetY: number("--material-core-offset-y", 0),
+    auraAlpha: number("--material-aura-alpha", 0),
+    auraScale: number("--material-aura-scale", 1.5),
+    auraOffset: number("--material-aura-offset", 0),
+    ringGap: number("--material-ring-gap", 2.6),
+    ringWidth: number("--material-ring-width", 1),
+    edgeUnderlay: color("--material-edge-underlay", "#000000"),
+    edgeUnderlayAlpha: number("--material-edge-underlay-alpha", 0),
+    edgeUnderlayWidth: number("--material-edge-underlay-width", 1.8),
+    edgeMainWidth: number("--material-edge-main-width", 0.62),
+    edgeFocusWidth: number("--material-edge-focus-width", 1.16),
+    fontFamily: style.getPropertyValue("--font-interface").trim() || "Segoe UI Variable Text"
+  };
+}
+
+function parseCssColor(value) {
+  const normalized = value.replace("#", "");
+  if (/^[0-9a-f]{3}$/i.test(normalized)) return Number.parseInt(normalized.split("").map((part) => part + part).join(""), 16);
+  if (/^[0-9a-f]{6}$/i.test(normalized)) return Number.parseInt(normalized, 16);
+  return 0xffffff;
 }
 
 function buildSearchText(node) {

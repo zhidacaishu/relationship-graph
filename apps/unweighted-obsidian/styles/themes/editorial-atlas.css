@@ -1,0 +1,115 @@
+body[data-theme="editorial-atlas"] {
+  --background-primary: #eee7d9;
+  --background-secondary: #d9d1c1;
+  --background-modifier-hover: #ded6c6;
+  --background-modifier-active: #d2c9b8;
+  --background-modifier-border: #bcb3a3;
+  --text-normal: #282b25;
+  --text-muted: #6f6e63;
+  --text-faint: #929083;
+  --interactive-accent: #a14f37;
+  --interactive-accent-hover: #7f3929;
+  --canvas-background: #e8e1d2;
+  --panel-width: 318px;
+  --ribbon-width: 0px;
+  --titlebar-height: 68px;
+  --radius-s: 2px;
+  --radius-m: 2px;
+  --font-interface: "Gill Sans MT", Candara, sans-serif;
+  --font-display: Baskerville, "Palatino Linotype", serif;
+  --graph-link: #4e5e58;
+  --graph-link-focus: #8c4735;
+  --graph-arrow: #665f53;
+  --graph-selection: #7d3528;
+  --graph-pinned: #405e60;
+  --graph-label: #3c443e;
+  --graph-label-focus: #241f1a;
+  --graph-label-faded: #7b776c;
+  --graph-edge-alpha: .26;
+  --graph-edge-faded-alpha: .055;
+  --graph-edge-focus-alpha: .84;
+  --graph-node-alpha: .94;
+  --graph-node-faded-alpha: .18;
+  --graph-node-search-faded-alpha: .22;
+  --graph-label-alpha: .78;
+  --graph-label-faded-alpha: .14;
+  --graph-label-size: 1.12;
+}
+body[data-theme="editorial-atlas"] { background: var(--canvas-background); }
+body[data-theme="editorial-atlas"] .app-shell { grid-template-columns: 1fr; grid-template-rows: var(--titlebar-height) 1fr; }
+body[data-theme="editorial-atlas"] .titlebar { grid-column: 1; grid-template-columns: 1fr auto; align-items: center; padding: 0 28px; background: rgba(238,231,217,.94); border-color: #bdb5a5; }
+body[data-theme="editorial-atlas"] .titlebar-vault { gap: 13px; padding: 0; color: #2e332d; font: 600 17px var(--font-display); letter-spacing: .02em; }
+body[data-theme="editorial-atlas"] .vault-mark { width: 22px; height: 22px; color: #8e4b39; }
+body[data-theme="editorial-atlas"] .titlebar-vault small { padding: 0; border: 0; background: transparent; color: #8e6b56; font: 700 9px var(--font-interface); letter-spacing: .16em; }
+body[data-theme="editorial-atlas"] .title-chevron,
+body[data-theme="editorial-atlas"] .workspace-tabs,
+body[data-theme="editorial-atlas"] .window-actions,
+body[data-theme="editorial-atlas"] .ribbon { display: none; }
+body[data-theme="editorial-atlas"] .titlebar::after { content: "FIG. 01  /  KNOWLEDGE TOPOLOGY"; color: #787366; font: 10px Consolas, monospace; letter-spacing: .12em; }
+body[data-theme="editorial-atlas"] .graph-workspace { grid-column: 1; grid-row: 2; background-color: var(--canvas-background); background-image: linear-gradient(rgba(74,82,70,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(74,82,70,.07) 1px, transparent 1px); background-size: 34px 34px; }
+body[data-theme="editorial-atlas"] .canvas-vignette { background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.22), transparent 42%), radial-gradient(circle at 50% 48%, transparent 58%, rgba(78,64,47,.1)); box-shadow: inset 0 0 110px rgba(78,64,47,.08); }
+body[data-theme="editorial-atlas"] .canvas-vignette::before { opacity: .12; mix-blend-mode: multiply; }
+body[data-theme="editorial-atlas"] .graph-heading { top: 24px; left: 29px; gap: 20px; }
+body[data-theme="editorial-atlas"] .view-name { min-width: 132px; color: #363b34; font: 500 17px var(--font-display); }
+body[data-theme="editorial-atlas"] .view-name svg { color: #9c4d39; }
+body[data-theme="editorial-atlas"] .mode-switch { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
+body[data-theme="editorial-atlas"] .mode-button { padding: 7px 13px 6px; border-bottom: 1px solid #a8a090; border-radius: 0; color: #817d71; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; }
+body[data-theme="editorial-atlas"] .mode-button.is-active { border-bottom: 2px solid #974d39; background: transparent; color: #4a382e; box-shadow: none; }
+body[data-theme="editorial-atlas"] .floating-search { border-radius: 0; background: rgba(238,231,217,.94); }
+body[data-theme="editorial-atlas"] .floating-search.is-visible,
+body[data-theme="editorial-atlas"] .floating-search:focus-within { width: 250px; padding: 6px 9px; border-color: #afa696; }
+body[data-theme="editorial-atlas"] .floating-search input,
+body[data-theme="editorial-atlas"] .panel-search input { color: #2b302a; font-size: 12px; }
+body[data-theme="editorial-atlas"] kbd { border-color: #aca392; background: #ded6c7; color: #7b7569; }
+body[data-theme="editorial-atlas"] .quick-results { border-color: #aaa18f; border-radius: 0; background: rgba(239,232,218,.98); box-shadow: 8px 10px 0 rgba(91,75,56,.12); }
+body[data-theme="editorial-atlas"] .quick-result strong { color: #302f28; }
+body[data-theme="editorial-atlas"] .quick-result span { color: #777367; }
+body[data-theme="editorial-atlas"] .quick-result:hover,
+body[data-theme="editorial-atlas"] .quick-result[aria-selected="true"] { background: #d8cfbf; }
+body[data-theme="editorial-atlas"] .panel-toggle { top: 22px; right: 28px; border-color: #9e9584; border-radius: 50%; background: rgba(235,227,212,.94); color: #5b5c52; box-shadow: 4px 5px 0 rgba(84,67,49,.13); }
+body[data-theme="editorial-atlas"] .panel-toggle[aria-expanded="true"] { right: calc(var(--panel-width) + 28px); }
+body[data-theme="editorial-atlas"] .control-panel { top: 16px; right: 16px; bottom: 16px; border: 1px solid #aaa18f; background: rgba(234,226,211,.98); box-shadow: 9px 12px 0 rgba(78,64,48,.13); }
+body[data-theme="editorial-atlas"] .panel-header { min-height: 76px; padding: 13px 16px 12px 21px; background: rgba(234,226,211,.98); border-color: #bcb3a3; }
+body[data-theme="editorial-atlas"] .panel-header strong { color: #31342d; font: 400 22px var(--font-display); }
+body[data-theme="editorial-atlas"] .eyebrow { color: #985641; font-size: 9px; }
+body[data-theme="editorial-atlas"] .control-section { border-color: #c3baa9; }
+body[data-theme="editorial-atlas"] .section-heading { height: 48px; padding-inline: 21px; color: #454940; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+body[data-theme="editorial-atlas"] .section-heading:hover { background: #ded6c6; }
+body[data-theme="editorial-atlas"] .section-content { padding-inline: 21px; }
+body[data-theme="editorial-atlas"] .panel-search,
+body[data-theme="editorial-atlas"] .node-context > div,
+body[data-theme="editorial-atlas"] .edge-note { border-color: #b9b09f; border-radius: 0; background: rgba(245,238,225,.48); color: #6e6b60; }
+body[data-theme="editorial-atlas"] .field-label,
+body[data-theme="editorial-atlas"] .query-hint,
+body[data-theme="editorial-atlas"] .range-copy,
+body[data-theme="editorial-atlas"] .group-query,
+body[data-theme="editorial-atlas"] .group-count { color: #777368; font-size: 10px; }
+body[data-theme="editorial-atlas"] .toggle-row { color: #565950; font-size: 12px; }
+body[data-theme="editorial-atlas"] .toggle-row i { background: #b9b1a2; }
+body[data-theme="editorial-atlas"] .node-card { left: 28px; bottom: 62px; width: 350px; padding: 21px; border: 1px solid #9e9583; border-radius: 0; background: rgba(238,230,215,.97); box-shadow: 9px 11px 0 rgba(80,63,45,.14); color: #30342e; }
+body[data-theme="editorial-atlas"] .node-card::before { content: "SELECTED ENTRY"; position: absolute; top: -22px; left: -1px; color: #805341; font: 9px Consolas, monospace; letter-spacing: .16em; }
+body[data-theme="editorial-atlas"] .node-card h2 { color: #292d27; font-size: 25px; }
+body[data-theme="editorial-atlas"] .node-type { color: #99513e; font-size: 9px; }
+body[data-theme="editorial-atlas"] .node-path,
+body[data-theme="editorial-atlas"] .node-context strong,
+body[data-theme="editorial-atlas"] .node-context p { color: #65665c; font-size: 11px; }
+body[data-theme="editorial-atlas"] .node-metrics { border-color: #b9b09f; }
+body[data-theme="editorial-atlas"] .node-metrics > div { border-color: #b9b09f; }
+body[data-theme="editorial-atlas"] .node-metrics strong { color: #34382f; font-size: 15px; }
+body[data-theme="editorial-atlas"] .node-card-actions button { border-color: #aaa18f; border-radius: 0; background: transparent; color: #5c5d54; font-size: 10px; }
+body[data-theme="editorial-atlas"] .canvas-toolbar { left: 28px; bottom: 17px; border: 0; border-bottom: 1px solid #a79e8d; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
+body[data-theme="editorial-atlas"] .graph-status { right: calc(var(--panel-width) + 32px); bottom: 24px; color: #6e6c62; font: 10px Consolas, monospace; }
+body[data-theme="editorial-atlas"] .control-panel.is-closed ~ .graph-status { right: 28px; }
+body[data-theme="editorial-atlas"] .design-switcher { bottom: 20px; border-color: #aaa18f; border-radius: 0; background: rgba(232,225,210,.9); color: #6f675b; font-size: 10px; }
+body[data-theme="editorial-atlas"] .loading-screen { background: #e8e1d2; }
+body[data-theme="editorial-atlas"] .loading-screen strong { color: #34352e; }
+body[data-theme="editorial-atlas"] .loading-screen > span { color: #7a7568; }
+@media (max-width: 640px) {
+  body[data-theme="editorial-atlas"] { --titlebar-height: 56px; }
+  body[data-theme="editorial-atlas"] .titlebar { padding-inline: 15px; }
+  body[data-theme="editorial-atlas"] .titlebar::after,
+  body[data-theme="editorial-atlas"] .titlebar-vault small,
+  body[data-theme="editorial-atlas"] .design-switcher { display: none; }
+  body[data-theme="editorial-atlas"] .graph-heading { left: 14px; top: 14px; }
+  body[data-theme="editorial-atlas"] .control-panel { top: 0; right: 0; bottom: 0; border: 0; }
+}

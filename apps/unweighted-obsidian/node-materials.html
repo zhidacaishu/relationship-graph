@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#121317">
+  <title>Atlas Graph — Node Material Lab</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='8' fill='%238da7a3' stroke='%23e5f0ed'/%3E%3C/svg%3E">
+  <style>
+    * { box-sizing: border-box; }
+    :root { color-scheme: dark; }
+    body { margin: 0; min-height: 100vh; background: #111217; color: #eeeaf0; font-family: Candara, "Segoe UI", sans-serif; }
+    body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background: radial-gradient(circle at 48% 8%, rgba(143,124,171,.14), transparent 28%), linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px); background-size: auto, 34px 34px, 34px 34px; }
+    main { position: relative; width: min(1280px, calc(100% - 44px)); margin: auto; padding: 66px 0 54px; }
+    header { display: grid; grid-template-columns: 1fr minmax(280px, 430px); gap: 60px; align-items: end; margin-bottom: 36px; }
+    .kicker { color: #a994bd; font: 700 10px Consolas, monospace; letter-spacing: .2em; text-transform: uppercase; }
+    h1 { margin: 13px 0 0; font: 400 clamp(44px, 7vw, 82px)/.94 Constantia, Georgia, serif; letter-spacing: -.05em; }
+    header p { margin: 0; color: #9a959f; font-size: 14px; line-height: 1.75; }
+    .materials { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+    article { position: relative; min-height: 330px; overflow: hidden; padding: 25px; border: 1px solid #36333b; background: #18171d; transition: transform .3s ease, border-color .3s ease; }
+    article:hover { transform: translateY(-4px); border-color: #57515d; }
+    .number { color: #746e79; font: 10px Consolas, monospace; letter-spacing: .14em; }
+    .sample { position: absolute; inset: 28px 24px 100px; }
+    .edge { position: absolute; left: 14%; right: 14%; top: 52%; height: 1px; background: var(--edge); box-shadow: 0 0 0 1px var(--underlay); transform: rotate(-8deg); }
+    .node { position: absolute; left: var(--x); top: var(--y); width: var(--size); height: var(--size); border-radius: 50%; background: var(--fill); border: var(--inner-w) solid var(--inner); box-shadow: 0 0 0 var(--outer-w) var(--outer), var(--shadow); }
+    .node::after { content: ""; position: absolute; width: 28%; height: 28%; left: 18%; top: 15%; border-radius: 50%; background: rgba(255,255,255,var(--shine)); }
+    .node.a { --x:20%; --y:54%; --size:29px; }
+    .node.b { --x:49%; --y:20%; --size:42px; }
+    .node.c { --x:73%; --y:53%; --size:24px; }
+    .copy { position: absolute; left: 25px; right: 25px; bottom: 23px; }
+    h2 { margin: 0 0 6px; font: 400 27px Constantia, Georgia, serif; }
+    article p { margin: 0 0 13px; color: #938e98; font-size: 12px; }
+    a { color: #dcd5e1; font: 700 10px Consolas, monospace; letter-spacing: .08em; text-decoration: none; text-transform: uppercase; }
+    a::after { content: "  →"; }
+    .mineral { --fill:#478c87; --inner:#183a3d; --inner-w:2px; --outer:#a9d8cf; --outer-w:1px; --shine:.4; --shadow:0 0 24px rgba(73,167,157,.28); --edge:#799d99; --underlay:#050b0e; }
+    .enamel { --fill:#b86661; --inner:#332026; --inner-w:3px; --outer:#edcdbd; --outer-w:1px; --shine:.16; --shadow:0 0 12px rgba(181,90,84,.16); --edge:#a88e89; --underlay:#0b0709; }
+    .ink { --fill:rgba(112,145,128,.75); --inner:rgba(21,35,28,.6); --inner-w:1px; --outer:rgba(176,205,189,.28); --outer-w:3px; --shine:.08; --shadow:7px -4px 22px rgba(101,146,124,.3), -7px 5px 18px rgba(101,146,124,.18); --edge:#778a81; --underlay:#080c09; }
+    .metal { --fill:#6b8490; --inner:#142129; --inner-w:3px; --outer:#cee5e8; --outer-w:1px; --shine:.55; --shadow:0 0 15px rgba(133,180,190,.14); --edge:#7b959f; --underlay:#05090c; }
+    footer { display: flex; justify-content: space-between; margin-top: 30px; color: #716d76; font: 10px Consolas, monospace; }
+    footer a { color: #918b97; text-transform: none; }
+    @media (max-width: 720px) { main { width: min(100% - 24px, 560px); padding-top: 40px; } header { grid-template-columns: 1fr; gap: 23px; } .materials { grid-template-columns: 1fr; } footer { gap: 20px; flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><div><span class="kicker">Obsidian Echo · Node Material Lab</span><h1>Choose the<br>surface.</h1></div><p>同一界面、同一数据、同一布局，只比较节点色彩、内外描边、光泽、晕染和边线层次。进入任一方案后，可继续测试 Global、Selected 与 Local。</p></header>
+    <section class="materials">
+      <article class="mineral"><span class="number">MATERIAL / 01</span><div class="sample"><i class="edge"></i><i class="node a"></i><i class="node b"></i><i class="node c"></i></div><div class="copy"><h2>Mineral Glaze</h2><p>半透明矿物色、深色内核与柔和釉面高光。</p><a href="./material-mineral-glaze.html">Open study</a></div></article>
+      <article class="enamel"><span class="number">MATERIAL / 02</span><div class="sample"><i class="edge"></i><i class="node a"></i><i class="node b"></i><i class="node c"></i></div><div class="copy"><h2>Enamel Double-Line</h2><p>高饱和珐琅主体，深内线与浅外线形成精致轮廓。</p><a href="./material-enamel-double-line.html">Open study</a></div></article>
+      <article class="ink"><span class="number">MATERIAL / 03</span><div class="sample"><i class="edge"></i><i class="node a"></i><i class="node b"></i><i class="node c"></i></div><div class="copy"><h2>Ink Bloom</h2><p>低饱和墨彩与错位晕染，柔和、自然、不发塑料光。</p><a href="./material-ink-bloom.html">Open study</a></div></article>
+      <article class="metal"><span class="number">MATERIAL / 04</span><div class="sample"><i class="edge"></i><i class="node a"></i><i class="node b"></i><i class="node c"></i></div><div class="copy"><h2>Precision Metal</h2><p>冷调金属、暗色内缘与锐利镜面高光。</p><a href="./material-precision-metal.html">Open study</a></div></article>
+    </section>
+    <footer><a href="./comparison.html">← Back to full-page designs</a><a href="./obsidian-echo.html">Open untreated baseline →</a></footer>
+  </main>
+</body>
+</html>

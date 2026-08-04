@@ -34,14 +34,11 @@ import { createGraphRenderer } from "./graph-renderer.js";
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const canvas = $("#graph-canvas");
   const context = canvas.getContext("2d", { alpha: true, desynchronized: true });
-  const folderColors = ["#a995df", "#72a0c7", "#d08da6", "#c7a262", "#69a999", "#cf8972", "#98aa6f", "#aa86c4"];
-  const mutedNode = "#918f8b";
-  const syntheticColors = {
-    tag: "#9d84d8",
-    attachment: "#6f9fbe",
-    unresolved: "#777471",
-    orphan: "#5f5d5a"
-  };
+  const visualPreset = getVisualPreset(document.body.dataset.theme, document.body.dataset.material);
+  const visualTheme = readCanvasTheme();
+  const folderColors = visualPreset.folderColors;
+  const mutedNode = visualPreset.mutedNode;
+  const syntheticColors = visualPreset.syntheticColors;
   const defaultFolders = [...new Set(source.nodes.map((node) => node.folder || folderFromPath(node.path)))].filter((folder) => folder && folder !== "99 Inbox").slice(0, 8);
 
   const elements = {
@@ -106,9 +103,9 @@ import { createGraphRenderer } from "./graph-renderer.js";
     existingOnly: true,
     showOrphans: source.links.length === 0,
     arrows: false,
-    textFade: 0.55,
-    nodeScale: 1,
-    linkThickness: 0.9,
+    textFade: visualPreset.textFade,
+    nodeScale: visualPreset.nodeScale,
+    linkThickness: visualPreset.linkThickness,
     forces: {
       centerStrength: 0.28,
       repelStrength: 9.5,
@@ -149,7 +146,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     rendererMode: "Canvas",
     renderPending: false,
     hasFitted: false,
-    panelOpen: window.innerWidth > 640,
+    panelOpen: visualPreset.panelOpen && window.innerWidth > 640,
     loadingDismissed: false
   };
 
@@ -1099,9 +1096,17 @@ import { createGraphRenderer } from "./graph-renderer.js";
 
       const connected = focusId && (link.source === focusId || link.target === focusId);
       const faded = focusId && !connected;
-      const alpha = connected ? 0.62 : faded ? 0.018 : 0.115;
-      context.strokeStyle = colorWithAlpha(connected ? "#c2bad3" : "#868581", alpha);
-      context.lineWidth = Math.max(0.35, state.linkThickness * (connected ? 1.16 : 0.62));
+      const alpha = connected ? visualTheme.edgeFocusAlpha : faded ? visualTheme.edgeFadedAlpha : visualTheme.edgeAlpha;
+      if (visualTheme.material) {
+        context.strokeStyle = colorWithAlpha(visualTheme.edgeUnderlay, visualTheme.edgeUnderlayAlpha * (faded ? 0.55 : 1));
+        context.lineWidth = visualTheme.edgeUnderlayWidth * state.linkThickness;
+        context.beginPath();
+        context.moveTo(sourcePoint.x, sourcePoint.y);
+        context.lineTo(targetPoint.x, targetPoint.y);
+        context.stroke();
+      }
+      context.strokeStyle = colorWithAlpha(connected ? visualTheme.linkFocus : visualTheme.link, alpha);
+      context.lineWidth = Math.max(0.35, state.linkThickness * (connected ? visualTheme.material ? visualTheme.edgeFocusWidth : 1.16 : visualTheme.material ? visualTheme.edgeMainWidth : 0.62));
       context.beginPath();
       context.moveTo(sourcePoint.x, sourcePoint.y);
       context.lineTo(targetPoint.x, targetPoint.y);
@@ -1123,7 +1128,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     const tipX = targetPoint.x - ux * (nodeRadius + 2);
     const tipY = targetPoint.y - uy * (nodeRadius + 2);
     const size = 3.2;
-    context.fillStyle = colorWithAlpha("#aaa5b0", Math.min(0.7, alpha + 0.14));
+    context.fillStyle = colorWithAlpha(visualTheme.arrow, Math.min(0.7, alpha + 0.14));
     context.beginPath();
     context.moveTo(tipX, tipY);
     context.lineTo(tipX - ux * size - uy * size * 0.72, tipY - uy * size + ux * size * 0.72);
@@ -1146,7 +1151,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
       const isSearchMatch = searchMatches?.has(node.id);
       const faded = focusId && !isFocus && !isNeighbor;
       const searchFaded = searchMatches && searchMatches.size && !isSearchMatch;
-      const alpha = faded ? 0.12 : searchFaded ? 0.17 : node.isOrphan ? 0.48 : 0.86;
+      const alpha = faded ? visualTheme.nodeFadedAlpha : searchFaded ? visualTheme.nodeSearchFadedAlpha : node.isOrphan ? 0.48 : visualTheme.nodeAlpha;
 
       if (isFocus || isSelected || isSearchMatch) {
         const glowRadius = radius * (isSelected ? 3.8 : 3.1) + 5;
@@ -1159,7 +1164,44 @@ import { createGraphRenderer } from "./graph-renderer.js";
         context.fill();
       }
 
-      if (node.type === "attachment") {
+      if (visualTheme.material) {
+        const offset = materialOffset(node.id, radius * visualTheme.auraOffset);
+        if (visualTheme.auraAlpha > 0) {
+          context.fillStyle = colorWithAlpha(node.color, alpha * visualTheme.auraAlpha);
+          drawCanvasNodeShape(node, point.x + offset.x, point.y + offset.y, radius * visualTheme.auraScale);
+          context.fill();
+        }
+        context.strokeStyle = colorWithAlpha(visualTheme.rimColor, alpha * visualTheme.rimAlpha);
+        context.lineWidth = Math.max(0.45, visualTheme.rimWidth);
+        drawCanvasNodeShape(node, point.x, point.y, radius + visualTheme.rimWidth);
+        context.stroke();
+        if (node.type === "unresolved") {
+          context.strokeStyle = colorWithAlpha(node.color, alpha * visualTheme.nodeFillAlpha);
+          context.lineWidth = Math.max(0.65, visualTheme.keylineWidth);
+          drawCanvasNodeShape(node, point.x, point.y, radius);
+          context.stroke();
+        } else {
+          context.fillStyle = colorWithAlpha(node.color, alpha * visualTheme.nodeFillAlpha);
+          drawCanvasNodeShape(node, point.x, point.y, radius);
+          context.fill();
+          context.strokeStyle = colorWithAlpha(visualTheme.keylineColor, alpha * visualTheme.keylineAlpha);
+          context.lineWidth = Math.max(0.45, visualTheme.keylineWidth);
+          drawCanvasNodeShape(node, point.x, point.y, Math.max(1, radius - visualTheme.keylineWidth * 0.5));
+          context.stroke();
+          if (radius >= 3.2 && visualTheme.coreAlpha > 0) {
+            context.fillStyle = colorWithAlpha(visualTheme.coreColor, alpha * visualTheme.coreAlpha);
+            context.beginPath();
+            context.arc(
+              point.x + radius * visualTheme.coreOffsetX,
+              point.y + radius * visualTheme.coreOffsetY,
+              Math.max(0.55, radius * visualTheme.coreScale),
+              0,
+              Math.PI * 2
+            );
+            context.fill();
+          }
+        }
+      } else if (node.type === "attachment") {
         const size = radius * 1.42;
         context.fillStyle = colorWithAlpha(node.color, alpha * 0.78);
         context.beginPath();
@@ -1173,15 +1215,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
         context.stroke();
       } else if (node.type === "tag") {
         context.fillStyle = colorWithAlpha(node.color, alpha * 0.86);
-        context.beginPath();
-        for (let corner = 0; corner < 6; corner += 1) {
-          const angle = Math.PI / 3 * corner;
-          const x = point.x + Math.cos(angle) * radius;
-          const y = point.y + Math.sin(angle) * radius;
-          if (corner === 0) context.moveTo(x, y);
-          else context.lineTo(x, y);
-        }
-        context.closePath();
+        drawCanvasNodeShape(node, point.x, point.y, radius);
         context.fill();
       } else {
         context.fillStyle = colorWithAlpha(node.color, alpha);
@@ -1191,10 +1225,10 @@ import { createGraphRenderer } from "./graph-renderer.js";
       }
 
       if (isSelected || state.pinned.has(node.id)) {
-        context.strokeStyle = colorWithAlpha(isSelected ? "#e5dffc" : "#b0a3ce", isSelected ? 0.78 : 0.52);
-        context.lineWidth = isSelected ? 1.15 : 0.8;
+        context.strokeStyle = colorWithAlpha(isSelected ? visualTheme.selection : visualTheme.pinned, isSelected ? visualTheme.selectionAlpha : 0.52);
+        context.lineWidth = visualTheme.material ? visualTheme.ringWidth : isSelected ? 1.15 : 0.8;
         context.beginPath();
-        context.arc(point.x, point.y, radius + 2.6, 0, Math.PI * 2);
+        context.arc(point.x, point.y, radius + (visualTheme.material ? visualTheme.ringGap : 2.6), 0, Math.PI * 2);
         context.stroke();
       }
     }
@@ -1221,18 +1255,43 @@ import { createGraphRenderer } from "./graph-renderer.js";
       const focused = node.id === focusId || node.id === state.selectedId;
       const neighbor = focusNeighbors?.has(node.id);
       const faded = focusId && !focused && !neighbor;
-      const fontSize = focused ? 11.5 : Math.min(10.5, 8.2 + state.camera.scale * 1.15);
-      context.font = `${focused ? 500 : 400} ${fontSize}px "Segoe UI Variable Text", "Segoe UI", sans-serif`;
+      const fontSize = (focused ? 11.5 : Math.min(10.5, 8.2 + state.camera.scale * 1.15)) * visualTheme.labelSize;
+      context.font = `${focused ? 500 : 400} ${fontSize}px ${visualTheme.fontFamily}`;
       const label = truncateLabel(node.name, focused ? 55 : state.camera.scale > 1.35 ? 38 : 27);
       const width = context.measureText(label).width;
       const radius = Math.max(1.15, node.radius * state.nodeScale * state.camera.scale);
       const rect = { x: point.x + radius + 4, y: point.y - fontSize / 2 - 1, width: width + 3, height: fontSize + 2 };
       if (priority <= 1 && occupied.some((other) => rectanglesOverlap(rect, other))) continue;
       occupied.push(rect);
-      context.fillStyle = focused ? "rgba(231,227,235,.94)" : faded ? "rgba(126,123,120,.08)" : "rgba(180,176,171,.57)";
+      context.fillStyle = focused ? colorWithAlpha(visualTheme.labelFocus, 0.94) : faded ? colorWithAlpha(visualTheme.labelFaded, visualTheme.labelFadedAlpha) : colorWithAlpha(visualTheme.label, visualTheme.labelAlpha);
       context.fillText(label, rect.x, point.y + 0.3);
     }
     context.restore();
+  }
+
+  function drawCanvasNodeShape(node, x, y, radius) {
+    context.beginPath();
+    if (node.type === "attachment") {
+      const size = radius * 1.42;
+      context.rect(x - size / 2, y - size / 2, size, size);
+    } else if (node.type === "tag") {
+      for (let corner = 0; corner < 6; corner += 1) {
+        const angle = Math.PI / 3 * corner;
+        const cornerX = x + Math.cos(angle) * radius;
+        const cornerY = y + Math.sin(angle) * radius;
+        if (corner === 0) context.moveTo(cornerX, cornerY);
+        else context.lineTo(cornerX, cornerY);
+      }
+      context.closePath();
+    } else context.arc(x, y, radius, 0, Math.PI * 2);
+  }
+
+  function materialOffset(id, amount) {
+    if (!amount) return { x: 0, y: 0 };
+    let hash = 2166136261;
+    for (let index = 0; index < id.length; index += 1) hash = Math.imul(hash ^ id.charCodeAt(index), 16777619);
+    const angle = (hash >>> 0) / 0xffffffff * Math.PI * 2;
+    return { x: Math.cos(angle) * amount, y: Math.sin(angle) * amount };
   }
 
   function nodeImportance(node) {
@@ -1621,6 +1680,145 @@ import { createGraphRenderer } from "./graph-renderer.js";
     elements.toast.classList.add("is-visible");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => elements.toast.classList.remove("is-visible"), 1900);
+  }
+
+  function getVisualPreset(theme, material) {
+    const materialPresets = {
+      "mineral-glaze": {
+        folderColors: ["#4b9b93", "#ae8063", "#718e78", "#a9945e", "#7e76a0", "#5f8fa5", "#a66f7d", "#7d9161"],
+        mutedNode: "#748b88",
+        syntheticColors: { tag: "#6eb7a8", attachment: "#6294a7", unresolved: "#718081", orphan: "#586865" },
+        textFade: 0.5,
+        nodeScale: 1.14,
+        linkThickness: 1.02,
+        panelOpen: false
+      },
+      "enamel-double-line": {
+        folderColors: ["#c06c64", "#5f9bad", "#d09a56", "#729a72", "#9a7ab5", "#c07c9a", "#8d9f5d", "#b67c55"],
+        mutedNode: "#96898b",
+        syntheticColors: { tag: "#b779a9", attachment: "#639cb0", unresolved: "#867c7d", orphan: "#675e60" },
+        textFade: 0.5,
+        nodeScale: 1.12,
+        linkThickness: 1.03,
+        panelOpen: false
+      },
+      "ink-bloom": {
+        folderColors: ["#78998b", "#967f71", "#8190a0", "#9c8e67", "#867f98", "#78969b", "#9b7f87", "#7f8f70"],
+        mutedNode: "#78837d",
+        syntheticColors: { tag: "#869d91", attachment: "#7d959e", unresolved: "#737a75", orphan: "#5d655f" },
+        textFade: 0.48,
+        nodeScale: 1.16,
+        linkThickness: 1,
+        panelOpen: false
+      },
+      "precision-metal": {
+        folderColors: ["#76909b", "#a07e72", "#7d9587", "#a18e67", "#85809b", "#6f9298", "#9b7c88", "#889477"],
+        mutedNode: "#78858b",
+        syntheticColors: { tag: "#889ba2", attachment: "#6f98a6", unresolved: "#6c777c", orphan: "#566168" },
+        textFade: 0.52,
+        nodeScale: 1.12,
+        linkThickness: 1.04,
+        panelOpen: false
+      }
+    };
+    if (materialPresets[material]) return materialPresets[material];
+    const presets = {
+      "editorial-atlas": {
+        folderColors: ["#315e63", "#a65b43", "#7c874d", "#b1833e", "#735b7b", "#4f7481", "#9a6d5e", "#66704b"],
+        mutedNode: "#817d70",
+        syntheticColors: { tag: "#9b563f", attachment: "#486f73", unresolved: "#8e8778", orphan: "#777267" },
+        textFade: 0.48,
+        nodeScale: 1.1,
+        linkThickness: 1.05,
+        panelOpen: false
+      },
+      "luminous-map": {
+        folderColors: ["#72dfce", "#efb64f", "#eb7d72", "#5fb6d4", "#a88adf", "#75c985", "#d68bb6", "#80a9ef"],
+        mutedNode: "#68858a",
+        syntheticColors: { tag: "#63dbc9", attachment: "#62aecd", unresolved: "#61767b", orphan: "#4c6267" },
+        textFade: 0.5,
+        nodeScale: 1.13,
+        linkThickness: 1.04,
+        panelOpen: false
+      },
+      "research-console": {
+        folderColors: ["#9fbd8b", "#d4b273", "#8aa8a0", "#c78470", "#7996b1", "#b48da3", "#a0a879", "#8d9d87"],
+        mutedNode: "#7a897b",
+        syntheticColors: { tag: "#a8c991", attachment: "#7da39a", unresolved: "#748078", orphan: "#5f6b61" },
+        textFade: 0.52,
+        nodeScale: 1.02,
+        linkThickness: 1,
+        panelOpen: true
+      },
+      "obsidian-echo": {
+        folderColors: ["#b091e5", "#73aec4", "#d58eaa", "#d1ab65", "#70b19f", "#da8e74", "#a2b574", "#b18dca"],
+        mutedNode: "#9a949d",
+        syntheticColors: { tag: "#ad91e4", attachment: "#75abc5", unresolved: "#817c83", orphan: "#676269" },
+        textFade: 0.5,
+        nodeScale: 1.08,
+        linkThickness: 1,
+        panelOpen: false
+      }
+    };
+    return presets[theme] ?? {
+      folderColors: ["#a995df", "#72a0c7", "#d08da6", "#c7a262", "#69a999", "#cf8972", "#98aa6f", "#aa86c4"],
+      mutedNode: "#918f8b",
+      syntheticColors: { tag: "#9d84d8", attachment: "#6f9fbe", unresolved: "#777471", orphan: "#5f5d5a" },
+      textFade: 0.55,
+      nodeScale: 1,
+      linkThickness: 0.9,
+      panelOpen: true
+    };
+  }
+
+  function readCanvasTheme() {
+    const style = getComputedStyle(document.documentElement);
+    const color = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
+    const number = (name, fallback) => Number.parseFloat(style.getPropertyValue(name)) || fallback;
+    return {
+      material: Boolean(document.body.dataset.material),
+      link: color("--graph-link", "#868581"),
+      linkFocus: color("--graph-link-focus", "#c2bad3"),
+      arrow: color("--graph-arrow", "#aaa5b0"),
+      selection: color("--graph-selection", "#e5dffc"),
+      pinned: color("--graph-pinned", "#b0a3ce"),
+      label: color("--graph-label", "#b4b0ab"),
+      labelFocus: color("--graph-label-focus", "#e7e3eb"),
+      labelFaded: color("--graph-label-faded", "#7e7b78"),
+      edgeAlpha: number("--graph-edge-alpha", 0.115),
+      edgeFadedAlpha: number("--graph-edge-faded-alpha", 0.018),
+      edgeFocusAlpha: number("--graph-edge-focus-alpha", 0.62),
+      nodeAlpha: number("--graph-node-alpha", 0.86),
+      nodeFadedAlpha: number("--graph-node-faded-alpha", 0.12),
+      nodeSearchFadedAlpha: number("--graph-node-search-faded-alpha", 0.17),
+      labelAlpha: number("--graph-label-alpha", 0.57),
+      labelFadedAlpha: number("--graph-label-faded-alpha", 0.08),
+      labelSize: number("--graph-label-size", 1),
+      selectionAlpha: number("--graph-selection-alpha", 0.78),
+      nodeFillAlpha: number("--material-node-fill-alpha", 1),
+      rimColor: color("--material-rim-color", "#ffffff"),
+      rimAlpha: number("--material-rim-alpha", 0),
+      rimWidth: number("--material-rim-width", 0),
+      keylineColor: color("--material-keyline-color", "#000000"),
+      keylineAlpha: number("--material-keyline-alpha", 0),
+      keylineWidth: number("--material-keyline-width", 0),
+      coreColor: color("--material-core-color", "#ffffff"),
+      coreAlpha: number("--material-core-alpha", 0),
+      coreScale: number("--material-core-scale", 0.25),
+      coreOffsetX: number("--material-core-offset-x", 0),
+      coreOffsetY: number("--material-core-offset-y", 0),
+      auraAlpha: number("--material-aura-alpha", 0),
+      auraScale: number("--material-aura-scale", 1.5),
+      auraOffset: number("--material-aura-offset", 0),
+      ringGap: number("--material-ring-gap", 2.6),
+      ringWidth: number("--material-ring-width", 1),
+      edgeUnderlay: color("--material-edge-underlay", "#000000"),
+      edgeUnderlayAlpha: number("--material-edge-underlay-alpha", 0),
+      edgeUnderlayWidth: number("--material-edge-underlay-width", 1.8),
+      edgeMainWidth: number("--material-edge-main-width", 0.62),
+      edgeFocusWidth: number("--material-edge-focus-width", 1.16),
+      fontFamily: style.getPropertyValue("--font-interface").trim() || '"Segoe UI Variable Text", "Segoe UI", sans-serif'
+    };
   }
 
   function debounce(callback, delay) {

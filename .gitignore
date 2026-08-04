@@ -7,6 +7,9 @@ dist/
 # Local browser and visual-test artifacts
 .playwright-mcp/
 graph-*.png
+unweighted-*.png
+material-*.png
+node-materials-*.png
 
 # Logs and temporary files
 *.log

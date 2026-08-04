@@ -43,6 +43,17 @@
 - tag、attachment、unresolved 和 orphan 使用固定系统色与不同节点形状；
 - 标签、附件和未解析节点从笔记元数据推导，孤立笔记由基础 wiki 图中的 degree 0 自动识别。
 
+### 无权重视觉方案
+
+无权重版本还提供两组共享数据与交互逻辑的多页面视觉实验：
+
+- `comparison.html`：比较 Editorial Atlas、Luminous Map、Research Console 和 Obsidian Echo 四套完整界面方向；
+- `node-materials.html`：在固定的 Obsidian Echo 界面中比较 Mineral Glaze、Enamel Double-Line、Ink Bloom 和 Precision Metal 四种节点材质；
+- 各方案通过 `theme-entry.js` 复用 `index.html` 的界面结构，并继续使用同一份图数据、渲染器和 Worker；
+- 节点材质通过 CSS token 控制色板、内外描边、光晕、高光、状态环和双层边线，PixiJS 与 Canvas 2D 回退保持对应效果。
+
+启动 `npm run dev:unweighted` 后，可直接访问 `/comparison.html` 或 `/node-materials.html` 进入选择页。
+
 ## 技术栈
 
 - 原生 HTML、CSS、JavaScript ES Modules
@@ -257,7 +268,18 @@ window.PRECOMPUTED_GRAPH_DATA = {
 │  │  └─ graph-data.js
 │  └─ unweighted-obsidian/
 │     ├─ index.html
+│     ├─ comparison.html
+│     ├─ node-materials.html
+│     ├─ editorial-atlas.html
+│     ├─ luminous-map.html
+│     ├─ research-console.html
+│     ├─ obsidian-echo.html
+│     ├─ material-*.html
+│     ├─ theme-entry.js
 │     ├─ styles.css
+│     ├─ styles/
+│     │  ├─ themes/
+│     │  └─ node-materials.css
 │     ├─ app.js
 │     ├─ graph-renderer.js
 │     ├─ graph-worker.js
@@ -273,10 +295,11 @@ window.PRECOMPUTED_GRAPH_DATA = {
 ## 渲染与布局架构
 
 1. `graph-data.js` 在页面加载时写入预计算数据。
-2. `app.js` 归一化节点，推导可选实体，并根据模式、查询和开关构建当前可见图。
-3. `graph-worker.js` 在独立线程中计算中心力、斥力、连边弹簧和碰撞约束。
-4. 支持跨源隔离时，主线程与 Worker 通过 `SharedArrayBuffer` 共享位置；否则通过可转移数组传递快照。
-5. `graph-renderer.js` 使用 PixiJS 绘制节点、边、箭头和标签；初始化失败时由 `app.js` 使用 Canvas 2D 回退渲染。
+2. 无权重视觉方案由 `theme-entry.js` 载入共享的 `index.html` 界面结构，再启动同一份图数据和应用代码。
+3. `app.js` 归一化节点，推导可选实体，并根据模式、查询和开关构建当前可见图。
+4. `graph-worker.js` 在独立线程中计算中心力、斥力、连边弹簧和碰撞约束。
+5. 支持跨源隔离时，主线程与 Worker 通过 `SharedArrayBuffer` 共享位置；否则通过可转移数组传递快照。
+6. `graph-renderer.js` 使用 PixiJS 绘制节点、边、箭头和标签；初始化失败时由 `app.js` 使用 Canvas 2D 回退渲染。
 
 开发和预览服务器已设置：
 

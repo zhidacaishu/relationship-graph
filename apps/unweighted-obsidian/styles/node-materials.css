@@ -1,0 +1,135 @@
+body[data-material] {
+  --material-node-fill-alpha: .9;
+  --material-rim-color: #dce8e5;
+  --material-rim-alpha: .34;
+  --material-rim-width: .72;
+  --material-keyline-color: #11181a;
+  --material-keyline-alpha: .55;
+  --material-keyline-width: .6;
+  --material-core-color: #ffffff;
+  --material-core-alpha: .28;
+  --material-core-scale: .3;
+  --material-core-offset-x: -.24;
+  --material-core-offset-y: -.28;
+  --material-aura-alpha: .05;
+  --material-aura-scale: 1.65;
+  --material-aura-offset: 0;
+  --material-ring-gap: 3.2;
+  --material-ring-width: 1.05;
+  --material-edge-underlay: #071013;
+  --material-edge-underlay-alpha: .28;
+  --material-edge-underlay-width: 1.85;
+  --material-edge-main-width: .72;
+  --material-edge-focus-width: 1.25;
+}
+
+body[data-material="mineral-glaze"] {
+  --graph-link: #7eaaa6;
+  --graph-link-focus: #a6e8de;
+  --graph-selection: #e3fff8;
+  --graph-pinned: #e2bd78;
+  --graph-label: #bed2cf;
+  --graph-edge-alpha: .17;
+  --graph-edge-focus-alpha: .83;
+  --material-node-fill-alpha: .82;
+  --material-rim-color: #b9e7de;
+  --material-rim-alpha: .38;
+  --material-rim-width: .78;
+  --material-keyline-color: #102429;
+  --material-keyline-alpha: .66;
+  --material-keyline-width: .7;
+  --material-core-alpha: .35;
+  --material-core-scale: .34;
+  --material-aura-alpha: .07;
+  --material-aura-scale: 1.72;
+  --material-edge-underlay: #02090c;
+  --material-edge-underlay-alpha: .38;
+}
+
+body[data-material="enamel-double-line"] {
+  --graph-link: #ad9b96;
+  --graph-link-focus: #f0cbbb;
+  --graph-selection: #fff1df;
+  --graph-pinned: #9ed0cb;
+  --graph-label: #d8cac6;
+  --graph-edge-alpha: .19;
+  --graph-edge-focus-alpha: .88;
+  --material-node-fill-alpha: .96;
+  --material-rim-color: #f2ddcc;
+  --material-rim-alpha: .7;
+  --material-rim-width: .58;
+  --material-keyline-color: #281c20;
+  --material-keyline-alpha: .94;
+  --material-keyline-width: .9;
+  --material-core-alpha: .16;
+  --material-core-scale: .23;
+  --material-aura-alpha: .025;
+  --material-aura-scale: 1.46;
+  --material-ring-gap: 3.8;
+  --material-ring-width: 1.35;
+  --material-edge-underlay: #100b0e;
+  --material-edge-underlay-alpha: .55;
+  --material-edge-underlay-width: 2;
+  --material-edge-main-width: .68;
+}
+
+body[data-material="ink-bloom"] {
+  --graph-link: #7e9189;
+  --graph-link-focus: #b2cec0;
+  --graph-selection: #dceae2;
+  --graph-pinned: #c2a77b;
+  --graph-label: #b7c0bb;
+  --graph-edge-alpha: .15;
+  --graph-edge-focus-alpha: .74;
+  --material-node-fill-alpha: .72;
+  --material-rim-color: #b3c8bd;
+  --material-rim-alpha: .18;
+  --material-rim-width: 1.05;
+  --material-keyline-color: #17221d;
+  --material-keyline-alpha: .34;
+  --material-keyline-width: .65;
+  --material-core-alpha: .1;
+  --material-core-scale: .38;
+  --material-aura-alpha: .11;
+  --material-aura-scale: 1.88;
+  --material-aura-offset: .18;
+  --material-ring-gap: 3.6;
+  --material-ring-width: .82;
+  --material-edge-underlay: #070c09;
+  --material-edge-underlay-alpha: .22;
+  --material-edge-underlay-width: 1.55;
+  --material-edge-main-width: .78;
+}
+
+body[data-material="precision-metal"] {
+  --graph-link: #829ba6;
+  --graph-link-focus: #c6e3e8;
+  --graph-selection: #effdff;
+  --graph-pinned: #e4b96b;
+  --graph-label: #c1cdd1;
+  --graph-edge-alpha: .2;
+  --graph-edge-focus-alpha: .92;
+  --material-node-fill-alpha: .88;
+  --material-rim-color: #d8edf0;
+  --material-rim-alpha: .56;
+  --material-rim-width: .48;
+  --material-keyline-color: #121c22;
+  --material-keyline-alpha: .9;
+  --material-keyline-width: .86;
+  --material-core-alpha: .46;
+  --material-core-scale: .2;
+  --material-core-offset-x: -.3;
+  --material-core-offset-y: -.32;
+  --material-aura-alpha: .025;
+  --material-aura-scale: 1.48;
+  --material-ring-gap: 4.1;
+  --material-ring-width: .72;
+  --material-edge-underlay: #05090c;
+  --material-edge-underlay-alpha: .52;
+  --material-edge-underlay-width: 2.15;
+  --material-edge-main-width: .62;
+  --material-edge-focus-width: 1.08;
+}
+
+body[data-material] .titlebar-vault small { max-width: 124px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body[data-material] .design-switcher { border-color: color-mix(in srgb, var(--graph-link-focus) 28%, transparent); color: color-mix(in srgb, var(--graph-label) 72%, transparent); }

@@ -1,0 +1,90 @@
+body[data-theme="obsidian-echo"] {
+  --background-primary: #1c1a20;
+  --background-secondary: #121116;
+  --background-modifier-hover: #302c37;
+  --background-modifier-active: #393340;
+  --background-modifier-border: #3a3540;
+  --text-normal: #e5e0e8;
+  --text-muted: #aaa3ae;
+  --text-faint: #746e79;
+  --interactive-accent: #a98cdf;
+  --interactive-accent-hover: #c1a7ee;
+  --canvas-background: #151419;
+  --panel-width: 300px;
+  --ribbon-width: 38px;
+  --titlebar-height: 48px;
+  --radius-s: 7px;
+  --radius-m: 11px;
+  --font-interface: Candara, "Segoe UI", sans-serif;
+  --font-display: Constantia, Georgia, serif;
+  --graph-link: #9a949f;
+  --graph-link-focus: #d1c1e4;
+  --graph-arrow: #bdb1c8;
+  --graph-selection: #f1e8ff;
+  --graph-pinned: #bbabe0;
+  --graph-label: #cbc4cf;
+  --graph-label-focus: #fff9ff;
+  --graph-label-faded: #8f8792;
+  --graph-edge-alpha: .18;
+  --graph-edge-faded-alpha: .035;
+  --graph-edge-focus-alpha: .76;
+  --graph-node-alpha: .94;
+  --graph-node-faded-alpha: .16;
+  --graph-label-alpha: .68;
+  --graph-label-faded-alpha: .1;
+  --graph-label-size: 1.08;
+}
+body[data-theme="obsidian-echo"] .app-shell { grid-template-columns: var(--ribbon-width) 1fr; }
+body[data-theme="obsidian-echo"] .titlebar { grid-template-columns: 230px minmax(0,1fr) auto; background: #121116; }
+body[data-theme="obsidian-echo"] .titlebar-vault { padding-inline: 15px; font-size: 13px; }
+body[data-theme="obsidian-echo"] .titlebar-vault small { border: 0; background: transparent; color: #81758b; font-size: 8px; }
+body[data-theme="obsidian-echo"] .workspace-tab:first-child,
+body[data-theme="obsidian-echo"] .new-tab,
+body[data-theme="obsidian-echo"] .window-actions { display: none; }
+body[data-theme="obsidian-echo"] .workspace-tab { width: 150px; height: 39px; border: 0; background: transparent; font-size: 12px; }
+body[data-theme="obsidian-echo"] .workspace-tab.is-active { height: 42px; background: #1c1a20; }
+body[data-theme="obsidian-echo"] .ribbon { padding-top: 13px; background: #121116; }
+body[data-theme="obsidian-echo"] .ribbon-button { width: 32px; height: 34px; }
+body[data-theme="obsidian-echo"] .ribbon-button:not(.is-active) { opacity: .66; }
+body[data-theme="obsidian-echo"] .canvas-vignette { background: radial-gradient(circle at 48% 42%, rgba(172,133,232,.045), transparent 34%), radial-gradient(circle at 50% 50%, transparent 43%, rgba(0,0,0,.29)); box-shadow: inset 0 0 160px rgba(0,0,0,.16); }
+body[data-theme="obsidian-echo"] .graph-heading { top: 20px; left: 22px; gap: 13px; }
+body[data-theme="obsidian-echo"] .view-name { min-width: 115px; font-family: var(--font-display); font-size: 15px; }
+body[data-theme="obsidian-echo"] .mode-switch,
+body[data-theme="obsidian-echo"] .floating-search,
+body[data-theme="obsidian-echo"] .canvas-toolbar { border-color: #403a47; background: rgba(25,23,30,.82); box-shadow: 0 12px 32px rgba(0,0,0,.24); }
+body[data-theme="obsidian-echo"] .mode-button { padding: 6px 12px; font-size: 11px; }
+body[data-theme="obsidian-echo"] .mode-button.is-active { background: #403747; color: #f0e9f5; }
+body[data-theme="obsidian-echo"] .panel-toggle { top: 18px; right: 20px; width: 34px; height: 34px; border-color: #403a47; border-radius: 9px; background: rgba(25,23,30,.86); }
+body[data-theme="obsidian-echo"] .panel-toggle[aria-expanded="true"] { right: calc(var(--panel-width) + 18px); }
+body[data-theme="obsidian-echo"] .control-panel { top: 12px; right: 12px; bottom: 12px; border: 1px solid #3e3844; border-radius: 12px; background: rgba(24,22,28,.95); box-shadow: -20px 20px 55px rgba(0,0,0,.28); }
+body[data-theme="obsidian-echo"] .panel-header { min-height: 72px; padding-inline: 19px 13px; background: rgba(24,22,28,.97); border-radius: 12px 12px 0 0; }
+body[data-theme="obsidian-echo"] .panel-header strong { font-size: 19px; }
+body[data-theme="obsidian-echo"] .eyebrow { font-size: 9px; color: #8d7b9a; }
+body[data-theme="obsidian-echo"] .section-heading { height: 48px; padding-inline: 19px; font-size: 12.5px; }
+body[data-theme="obsidian-echo"] .section-content { padding-inline: 19px; }
+body[data-theme="obsidian-echo"] .field-label,
+body[data-theme="obsidian-echo"] .query-hint,
+body[data-theme="obsidian-echo"] .range-copy,
+body[data-theme="obsidian-echo"] .group-query,
+body[data-theme="obsidian-echo"] .group-count { font-size: 10px; }
+body[data-theme="obsidian-echo"] .toggle-row { min-height: 34px; font-size: 12px; }
+body[data-theme="obsidian-echo"] .node-card { left: 22px; bottom: 58px; width: 330px; padding: 17px; border-color: #4b4351; border-radius: 13px; background: rgba(23,21,27,.96); box-shadow: 0 22px 65px rgba(0,0,0,.4); }
+body[data-theme="obsidian-echo"] .node-card h2 { margin: 7px 0 6px; font-size: 21px; }
+body[data-theme="obsidian-echo"] .node-type,
+body[data-theme="obsidian-echo"] .node-context span,
+body[data-theme="obsidian-echo"] .node-metrics span { font-size: 9px; }
+body[data-theme="obsidian-echo"] .node-path,
+body[data-theme="obsidian-echo"] .node-context strong,
+body[data-theme="obsidian-echo"] .node-context p,
+body[data-theme="obsidian-echo"] .node-card-actions button { font-size: 10.5px; }
+body[data-theme="obsidian-echo"] .graph-status { right: calc(var(--panel-width) + 26px); bottom: 20px; font-size: 10px; }
+body[data-theme="obsidian-echo"] .control-panel.is-closed ~ .graph-status { right: 20px; }
+body[data-theme="obsidian-echo"] .design-switcher { bottom: 19px; font-size: 10px; }
+body[data-theme="obsidian-echo"] .loading-screen { background: #151419; }
+@media (max-width: 640px) {
+  body[data-theme="obsidian-echo"] { --ribbon-width: 0px; }
+  body[data-theme="obsidian-echo"] .ribbon { display: none; }
+  body[data-theme="obsidian-echo"] .titlebar { grid-template-columns: 110px 1fr; }
+  body[data-theme="obsidian-echo"] .control-panel { top: 0; right: 0; bottom: 0; border-radius: 0; }
+  body[data-theme="obsidian-echo"] .design-switcher { display: none; }
+}
