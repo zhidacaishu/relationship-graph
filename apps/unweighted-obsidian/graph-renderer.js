@@ -9,14 +9,14 @@ const LABEL_OFFSETS = [
   [0.72, 0.72]
 ];
 
-export async function createGraphRenderer(host, interactionCanvas) {
-  const renderer = new GraphRenderer(host, interactionCanvas);
+export async function createGraphRenderer(host, interactionCanvas, visualConfig) {
+  const renderer = new GraphRenderer(host, interactionCanvas, visualConfig);
   await renderer.initialize();
   return renderer;
 }
 
 class GraphRenderer {
-  constructor(host, interactionCanvas) {
+  constructor(host, interactionCanvas, visualConfig) {
     this.host = host;
     this.interactionCanvas = interactionCanvas;
     this.app = new Application();
@@ -44,7 +44,7 @@ class GraphRenderer {
     this.searchMatches = null;
     this.searchTextById = new Map();
     this.backend = "WebGL";
-    this.theme = readVisualTheme();
+    this.theme = visualConfig;
   }
 
   async initialize() {
@@ -87,6 +87,20 @@ class GraphRenderer {
   resize(width, height, resolution) {
     this.app.renderer.resolution = resolution;
     this.app.renderer.resize(Math.max(1, width), Math.max(1, height));
+  }
+
+  setVisualConfig(visualConfig) {
+    this.theme = visualConfig;
+    this.labelPlacements.clear();
+    this.graphKey = "";
+    this.lastPlacementScale = 0;
+    for (const label of this.labelPool) {
+      label.style = {
+        ...label.style,
+        fontFamily: visualConfig.fontFamily,
+        fill: visualConfig.label
+      };
+    }
   }
 
   clear() {
@@ -414,61 +428,6 @@ function drawArrow(graphics, source, target, radius, scale) {
   ]);
 }
 
-function readVisualTheme() {
-  const style = getComputedStyle(document.documentElement);
-  const color = (name, fallback) => parseCssColor(style.getPropertyValue(name).trim() || fallback);
-  const number = (name, fallback) => Number.parseFloat(style.getPropertyValue(name)) || fallback;
-  return {
-    material: Boolean(document.body.dataset.material),
-    link: color("--graph-link", "#868581"),
-    linkFocus: color("--graph-link-focus", "#c2bad3"),
-    arrow: color("--graph-arrow", "#aaa5b0"),
-    selection: color("--graph-selection", "#e5dffc"),
-    pinned: color("--graph-pinned", "#b0a3ce"),
-    label: color("--graph-label", "#b4b0ab"),
-    labelFocus: color("--graph-label-focus", "#e7e3eb"),
-    edgeAlpha: number("--graph-edge-alpha", 0.115),
-    edgeFadedAlpha: number("--graph-edge-faded-alpha", 0.018),
-    edgeFocusAlpha: number("--graph-edge-focus-alpha", 0.62),
-    nodeAlpha: number("--graph-node-alpha", 0.86),
-    nodeFadedAlpha: number("--graph-node-faded-alpha", 0.12),
-    nodeSearchFadedAlpha: number("--graph-node-search-faded-alpha", 0.17),
-    labelAlpha: number("--graph-label-alpha", 0.57),
-    labelFadedAlpha: number("--graph-label-faded-alpha", 0.08),
-    labelSize: number("--graph-label-size", 1),
-    selectionAlpha: number("--graph-selection-alpha", 0.78),
-    nodeFillAlpha: number("--material-node-fill-alpha", 1),
-    rimColor: color("--material-rim-color", "#ffffff"),
-    rimAlpha: number("--material-rim-alpha", 0),
-    rimWidth: number("--material-rim-width", 0),
-    keylineColor: color("--material-keyline-color", "#000000"),
-    keylineAlpha: number("--material-keyline-alpha", 0),
-    keylineWidth: number("--material-keyline-width", 0),
-    coreColor: color("--material-core-color", "#ffffff"),
-    coreAlpha: number("--material-core-alpha", 0),
-    coreScale: number("--material-core-scale", 0.25),
-    coreOffsetX: number("--material-core-offset-x", 0),
-    coreOffsetY: number("--material-core-offset-y", 0),
-    auraAlpha: number("--material-aura-alpha", 0),
-    auraScale: number("--material-aura-scale", 1.5),
-    auraOffset: number("--material-aura-offset", 0),
-    ringGap: number("--material-ring-gap", 2.6),
-    ringWidth: number("--material-ring-width", 1),
-    edgeUnderlay: color("--material-edge-underlay", "#000000"),
-    edgeUnderlayAlpha: number("--material-edge-underlay-alpha", 0),
-    edgeUnderlayWidth: number("--material-edge-underlay-width", 1.8),
-    edgeMainWidth: number("--material-edge-main-width", 0.62),
-    edgeFocusWidth: number("--material-edge-focus-width", 1.16),
-    fontFamily: style.getPropertyValue("--font-interface").trim() || "Segoe UI Variable Text"
-  };
-}
-
-function parseCssColor(value) {
-  const normalized = value.replace("#", "");
-  if (/^[0-9a-f]{3}$/i.test(normalized)) return Number.parseInt(normalized.split("").map((part) => part + part).join(""), 16);
-  if (/^[0-9a-f]{6}$/i.test(normalized)) return Number.parseInt(normalized, 16);
-  return 0xffffff;
-}
 
 function buildSearchText(node) {
   return [node.name, node.path, node.folder, node.type, ...(node.tags ?? []), ...(node.aliases ?? [])].join(" ").toLowerCase();

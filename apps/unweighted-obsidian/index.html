@@ -4,11 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#151419">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239b84df' stroke-width='1.6'%3E%3Ccircle cx='5' cy='12' r='2.5'/%3E%3Ccircle cx='15' cy='5' r='2.5'/%3E%3Ccircle cx='19' cy='17' r='2.5'/%3E%3Cpath d='m7.1 10.5 5.8-4M7.4 12.7l9.2 3.5M16.2 7.3l1.7 7.3'/%3E%3C/svg%3E">
-  <title>Atlas Vault — Unweighted Graph</title>
+  <title>Atlas Vault — Graph Study</title>
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles/themes/editorial-atlas.css">
+  <link rel="stylesheet" href="./styles/themes/luminous-map.css">
+  <link rel="stylesheet" href="./styles/themes/research-console.css">
+  <link rel="stylesheet" href="./styles/themes/obsidian-echo.css">
+  <link rel="stylesheet" href="./styles/node-materials.css">
 </head>
-<body>
+<body data-theme="obsidian-echo">
   <svg class="svg-sprite" aria-hidden="true">
     <symbol id="i-vault" viewBox="0 0 24 24"><path d="M12 2 5.3 5.7 3 16.1 9.2 22l9.6-4.4L21 8.1 16.7 3 12 2Z"/><path d="m5.3 5.7 5.2 3.1L16.7 3M10.5 8.8 9.2 22m1.3-13.2 8.3 8.8M16.7 3l2.1 14.6"/></symbol>
     <symbol id="i-files" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></symbol>
@@ -84,12 +90,50 @@
 
       <aside id="control-panel" class="control-panel" aria-label="Graph controls">
         <div class="panel-header">
-          <div><span class="eyebrow">UNWEIGHTED GRAPH</span><strong>Graph controls</strong></div>
+          <div><span class="eyebrow">CONFIGURATION STUDY</span><strong>Graph studio</strong></div>
           <button id="panel-close" class="icon-button" aria-label="Close controls"><svg><use href="#i-x"/></svg></button>
         </div>
 
-        <section class="control-section is-open">
-          <button class="section-heading" aria-expanded="true"><span>Filters</span><svg><use href="#i-chevron"/></svg></button>
+        <section class="control-section study-section is-open">
+          <button class="section-heading" aria-expanded="true"><span>Study</span><svg><use href="#i-chevron"/></svg></button>
+          <div class="section-content">
+            <label class="field-label" for="preset-select">Configuration</label>
+            <div class="select-shell"><select id="preset-select" aria-label="Configuration preset"></select></div>
+            <div class="study-meta"><span id="preset-kind">Built-in</span><strong id="preset-state">Saved</strong></div>
+            <div class="study-actions">
+              <button id="save-preset" type="button">Save copy</button>
+              <button id="delete-preset" type="button" disabled>Delete</button>
+              <button id="reset-preset" type="button">Reset</button>
+            </div>
+            <div class="ab-panel" aria-label="A and B comparison slots">
+              <div><span>Quick compare</span><small>Same graph state</small></div>
+              <div class="ab-slots">
+                <button id="slot-a" type="button" aria-label="Load comparison slot A"><b>A</b><span>Set A</span></button>
+                <button id="slot-b" type="button" aria-label="Load comparison slot B"><b>B</b><span>Set B</span></button>
+              </div>
+            </div>
+            <div class="study-actions secondary">
+              <button id="export-config" type="button">Export</button>
+              <button id="import-config" type="button">Import</button>
+              <a id="compare-view" href="./comparison.html?source=live">Compare view</a>
+              <input id="import-config-file" type="file" accept="application/json,.json" hidden>
+            </div>
+          </div>
+        </section>
+
+        <section class="control-section semantics-section">
+          <button class="section-heading" aria-expanded="false"><span>Graph semantics</span><svg><use href="#i-chevron"/></svg></button>
+          <div class="section-content">
+            <div class="segmented-control" role="group" aria-label="Graph semantics">
+              <button type="button" class="is-active" data-semantics="unweighted" aria-pressed="true">Unweighted</button>
+              <button type="button" data-semantics="weighted" aria-pressed="false" disabled>Weighted</button>
+            </div>
+            <p class="capability-note"><strong>Equal relationships.</strong> This Vault dataset has no edge-weight source. Weighted comparison is available in the literature graph build, where similarity can drive layout and edge appearance independently.</p>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <button class="section-heading" aria-expanded="false"><span>Filters</span><svg><use href="#i-chevron"/></svg></button>
           <div class="section-content">
             <label class="field-label" for="filter-search">Search files</label>
             <div class="panel-search"><svg><use href="#i-search"/></svg><input id="filter-search" type="search" autocomplete="off" placeholder="tag:idea  folder:&quot;03 Projects&quot;"></div>
@@ -116,27 +160,67 @@
         </section>
 
         <section class="control-section">
-          <button class="section-heading" aria-expanded="false"><span>Display</span><svg><use href="#i-chevron"/></svg></button>
+          <button class="section-heading" aria-expanded="false"><span>Theme</span><svg><use href="#i-chevron"/></svg></button>
           <div class="section-content">
-            <div class="edge-note"><i></i><span>Every relationship uses the same base force and line style.</span></div>
-            <label class="toggle-row single"><span>Arrows</span><input id="toggle-arrows" type="checkbox"><i></i></label>
-            <div class="range-row">
-              <div class="range-copy"><span>Text fade threshold</span><output id="fade-value">0.55</output></div>
-              <input id="text-fade" type="range" min="0" max="1" step="0.05" value="0.55">
+            <div id="theme-options" class="theme-options" role="radiogroup" aria-label="Background theme"></div>
+            <label class="field-label select-label" for="material-select">Node material</label>
+            <div class="select-shell"><select id="material-select" aria-label="Node material"></select></div>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <button class="section-heading" aria-expanded="false"><span>Nodes</span><svg><use href="#i-chevron"/></svg></button>
+          <div class="section-content">
+            <div class="field-pair">
+              <label><span>Color</span><select id="node-color-mode"><option value="group">By group</option><option value="type">By type</option><option value="fixed">Single color</option></select></label>
+              <label class="color-field"><span>Value</span><input id="node-color" type="color" value="#b091e5" aria-label="Node color"></label>
+            </div>
+            <div class="field-pair single">
+              <label><span>Size mapping</span><select id="node-size-mode"><option value="degree">By degree</option><option value="fixed">Fixed base size</option></select></label>
             </div>
             <div class="range-row">
-              <div class="range-copy"><span>Node size</span><output id="node-size-value">1.00</output></div>
+              <div class="range-copy"><span>Node scale</span><output id="node-size-value">1.00</output></div>
               <input id="node-size" type="range" min="0.5" max="2" step="0.05" value="1">
-            </div>
-            <div class="range-row">
-              <div class="range-copy"><span>Link thickness</span><output id="link-thickness-value">0.90</output></div>
-              <input id="link-thickness" type="range" min="0.25" max="3" step="0.05" value="0.9">
             </div>
           </div>
         </section>
 
         <section class="control-section">
-          <button class="section-heading" aria-expanded="false"><span>Forces</span><svg><use href="#i-chevron"/></svg></button>
+          <button class="section-heading" aria-expanded="false"><span>Edges</span><svg><use href="#i-chevron"/></svg></button>
+          <div class="section-content">
+            <div class="edge-note"><i></i><span>Every relationship has equal semantic weight. Style changes do not alter layout.</span></div>
+            <div class="field-pair">
+              <label><span>Color</span><select id="edge-color-mode"><option value="theme">From theme</option><option value="fixed">Custom</option></select></label>
+              <label class="color-field"><span>Line</span><input id="edge-color" type="color" value="#9a949f" aria-label="Edge color"></label>
+            </div>
+            <label class="color-row"><span>Focused edge</span><input id="edge-focus-color" type="color" value="#d1c1e4" aria-label="Focused edge color"></label>
+            <label class="toggle-row single"><span>Direction arrows</span><input id="toggle-arrows" type="checkbox"><i></i></label>
+            <div class="range-row">
+              <div class="range-copy"><span>Link thickness</span><output id="link-thickness-value">0.90</output></div>
+              <input id="link-thickness" type="range" min="0.25" max="3" step="0.05" value="0.9">
+            </div>
+            <div class="range-row">
+              <div class="range-copy"><span>Link opacity</span><output id="edge-opacity-value">0.18</output></div>
+              <input id="edge-opacity" type="range" min="0" max="1" step="0.01" value="0.18">
+            </div>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <button class="section-heading" aria-expanded="false"><span>Display</span><svg><use href="#i-chevron"/></svg></button>
+          <div class="section-content">
+            <label class="toggle-row single"><span>Background vignette</span><input id="toggle-vignette" type="checkbox" checked><i></i></label>
+            <label class="field-label select-label" for="label-density">Label density</label>
+            <div class="select-shell"><select id="label-density"><option value="quiet">Quiet</option><option value="balanced">Balanced</option><option value="dense">Dense</option></select></div>
+            <div class="range-row">
+              <div class="range-copy"><span>Text fade threshold</span><output id="fade-value">0.55</output></div>
+              <input id="text-fade" type="range" min="0" max="1" step="0.05" value="0.55">
+            </div>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <button class="section-heading" aria-expanded="false"><span>Layout</span><svg><use href="#i-chevron"/></svg></button>
           <div class="section-content">
             <div class="range-row">
               <div class="range-copy"><span>Center force</span><output id="center-value">0.28</output></div>

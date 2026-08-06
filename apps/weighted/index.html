@@ -108,6 +108,22 @@
           </div>
         </section>
 
+        <section class="control-section is-open">
+          <button class="section-heading" aria-expanded="true"><span>Graph semantics</span><svg><use href="#i-chevron"/></svg></button>
+          <div class="section-content">
+            <span class="capability-label">WEIGHTED DATA AVAILABLE</span>
+            <div class="semantics-switch" role="group" aria-label="Graph semantics">
+              <button class="semantics-button is-active" type="button" data-semantics-mode="weighted" aria-pressed="true">Weighted</button>
+              <button class="semantics-button" type="button" data-semantics-mode="unweighted" aria-pressed="false">Unweighted</button>
+            </div>
+            <p id="semantics-note" class="semantics-note">Weights shape the layout and the appearance of links.</p>
+            <div class="toggle-list semantics-toggles">
+              <label class="toggle-row"><span>Weights affect layout</span><input id="weight-layout" type="checkbox" checked><i></i></label>
+              <label class="toggle-row"><span>Weights affect edge appearance</span><input id="weight-edge-style" type="checkbox" checked><i></i></label>
+            </div>
+          </div>
+        </section>
+
         <section class="control-section">
           <button class="section-heading" aria-expanded="false"><span>Groups</span><svg><use href="#i-chevron"/></svg></button>
           <div class="section-content">

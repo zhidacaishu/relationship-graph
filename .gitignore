@@ -4,9 +4,16 @@ node_modules/
 # Build output
 dist/
 
-# Local browser and visual-test artifacts
+# Local tooling state
 .playwright-mcp/
+.claude/settings.local.json
+.vite/
+
+# Browser and visual-test artifacts
 graph-*.png
+comparison-*.png
+editorial-*.png
+weighted-*.png
 unweighted-*.png
 material-*.png
 node-materials-*.png

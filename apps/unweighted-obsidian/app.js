@@ -1,4 +1,25 @@
 import { createGraphRenderer } from "./graph-renderer.js";
+import {
+  MATERIALS,
+  THEMES,
+  applyDocumentConfig,
+  classifyConfigChange,
+  cloneConfig,
+  configDisplayName,
+  configFingerprint,
+  deleteUserPreset,
+  exportGraphConfig,
+  getPreset,
+  importGraphConfig,
+  listPresets,
+  loadComparisonSlots,
+  normalizeGraphConfig,
+  resolveInitialGraphConfig,
+  resolveVisualConfig,
+  saveComparisonSlot,
+  saveCurrentConfig,
+  saveUserPreset
+} from "./graph-config.js";
 
 (() => {
   "use strict";
@@ -34,11 +55,14 @@ import { createGraphRenderer } from "./graph-renderer.js";
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const canvas = $("#graph-canvas");
   const context = canvas.getContext("2d", { alpha: true, desynchronized: true });
-  const visualPreset = getVisualPreset(document.body.dataset.theme, document.body.dataset.material);
-  const visualTheme = readCanvasTheme();
-  const folderColors = visualPreset.folderColors;
-  const mutedNode = visualPreset.mutedNode;
-  const syntheticColors = visualPreset.syntheticColors;
+  const initialConfig = resolveInitialGraphConfig({
+    entryPreset: document.body.dataset.entryPreset,
+    entryMaterial: document.body.dataset.entryMaterial
+  });
+  const initialVisual = resolveVisualConfig(initialConfig);
+  const initialPresets = listPresets();
+  const initialBaselineConfig = getPreset(initialConfig.id, initialPresets) ?? cloneConfig(initialConfig);
+  applyDocumentConfig(initialConfig, initialVisual);
   const defaultFolders = [...new Set(source.nodes.map((node) => node.folder || folderFromPath(node.path)))].filter((folder) => folder && folder !== "99 Inbox").slice(0, 8);
 
   const elements = {
@@ -80,6 +104,28 @@ import { createGraphRenderer } from "./graph-renderer.js";
     statusPulse: $(".status-pulse"),
     graphCount: $("#graph-count"),
     viewTitle: $("#view-title"),
+    presetSelect: $("#preset-select"),
+    presetKind: $("#preset-kind"),
+    presetState: $("#preset-state"),
+    savePreset: $("#save-preset"),
+    deletePreset: $("#delete-preset"),
+    resetPreset: $("#reset-preset"),
+    slotA: $("#slot-a"),
+    slotB: $("#slot-b"),
+    exportConfig: $("#export-config"),
+    importConfig: $("#import-config"),
+    importConfigFile: $("#import-config-file"),
+    compareView: $("#compare-view"),
+    themeOptions: $("#theme-options"),
+    materialSelect: $("#material-select"),
+    nodeColorMode: $("#node-color-mode"),
+    nodeColor: $("#node-color"),
+    nodeSizeMode: $("#node-size-mode"),
+    edgeColorMode: $("#edge-color-mode"),
+    edgeColor: $("#edge-color"),
+    edgeFocusColor: $("#edge-focus-color"),
+    vignette: $("#toggle-vignette"),
+    labelDensity: $("#label-density"),
     loading: $("#loading-screen"),
     loadingStatus: $("#loading-status"),
     toast: $("#toast")
@@ -102,21 +148,22 @@ import { createGraphRenderer } from "./graph-renderer.js";
     showAttachments: false,
     existingOnly: true,
     showOrphans: source.links.length === 0,
-    arrows: false,
-    textFade: visualPreset.textFade,
-    nodeScale: visualPreset.nodeScale,
-    linkThickness: visualPreset.linkThickness,
-    forces: {
-      centerStrength: 0.28,
-      repelStrength: 9.5,
-      linkStrength: 0.82,
-      linkDistance: 72
-    },
+    config: initialConfig,
+    visual: initialVisual,
+    baselineConfig: initialBaselineConfig,
+    presets: initialPresets,
+    comparisonSlots: loadComparisonSlots(),
+    activeSlot: null,
+    arrows: initialConfig.edgeStyle.arrows,
+    textFade: labelThreshold(initialConfig),
+    nodeScale: initialConfig.nodeStyle.scale,
+    linkThickness: initialConfig.edgeStyle.thickness,
+    forces: { ...initialConfig.layout },
     groups: defaultFolders.map((folder, index) => ({
       id: `group-${index}`,
       query: `folder:"${folder}"`,
       folder,
-      color: folderColors[index % folderColors.length],
+      color: initialVisual.palette[index % initialVisual.palette.length],
       enabled: true
     })),
     visibleNodes: [],
@@ -145,8 +192,9 @@ import { createGraphRenderer } from "./graph-renderer.js";
     renderer: null,
     rendererMode: "Canvas",
     renderPending: false,
+    disposed: false,
     hasFitted: false,
-    panelOpen: visualPreset.panelOpen && window.innerWidth > 640,
+    panelOpen: THEMES[initialConfig.theme.id].panelOpen && window.innerWidth > 640,
     loadingDismissed: false
   };
 
@@ -195,39 +243,22 @@ import { createGraphRenderer } from "./graph-renderer.js";
     };
   });
   const synthetic = createSyntheticGraph();
-  const allNodeLookup = new Map([
+  const allNodes = [
     ...baseNodes,
     ...synthetic.tags.nodes,
     ...synthetic.attachments.nodes,
     ...synthetic.unresolved.nodes
-  ].map((node) => [node.id, node]));
+  ];
+  allNodes.forEach((node) => {
+    node.naturalRadius = node.radius;
+  });
+  const allNodeLookup = new Map(allNodes.map((node) => [node.id, node]));
   const fullDegrees = calculateDegrees([...baseLinks, ...synthetic.tags.links, ...synthetic.attachments.links, ...synthetic.unresolved.links]);
 
   initialize();
 
   async function initialize() {
-    state.worker = new Worker(new URL("./graph-worker.js", import.meta.url), { type: "module" });
-    state.worker.addEventListener("message", handleWorkerMessage);
-    state.worker.addEventListener("error", handleWorkerError);
-    bindPanelControls();
-    bindCanvasControls();
-    setPanelOpen(state.panelOpen, false);
-    renderGroupList();
-    updateAllRanges();
-    resizeCanvas();
-    try {
-      state.renderer = await createGraphRenderer(canvas.parentElement, canvas);
-      state.rendererMode = state.renderer.backend;
-      state.renderer.resize(state.width, state.height, state.dpr);
-    } catch (error) {
-      console.warn("WebGL renderer unavailable; using Canvas fallback", error);
-      state.renderer = null;
-      state.rendererMode = "Canvas";
-    }
-    rebuildGraph({ fit: true });
-    monitorSharedPositions();
-    const resizeObserver = new ResizeObserver(resizeCanvas);
-    resizeObserver.observe(canvas.parentElement);
+    let resizeObserver = null;
     let dprQuery = null;
     const handleDprChange = () => {
       resizeCanvas();
@@ -238,14 +269,48 @@ import { createGraphRenderer } from "./graph-renderer.js";
       dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
       dprQuery.addEventListener("change", handleDprChange);
     };
-    bindDprQuery();
     window.addEventListener("beforeunload", () => {
+      state.disposed = true;
       cancelAnimationFrame(state.monitorFrame);
-      resizeObserver.disconnect();
+      resizeObserver?.disconnect();
       dprQuery?.removeEventListener("change", handleDprChange);
       state.renderer?.destroy();
       state.worker?.terminate();
-    });
+    }, { once: true });
+    state.worker = new Worker(new URL("./graph-worker.js", import.meta.url), { type: "module" });
+    state.worker.addEventListener("message", handleWorkerMessage);
+    state.worker.addEventListener("error", handleWorkerError);
+    renderThemeOptions();
+    renderMaterialOptions();
+    renderPresetOptions();
+    bindPanelControls();
+    bindCanvasControls();
+    syncConfigControls();
+    renderComparisonSlots();
+    setPanelOpen(state.panelOpen, false);
+    renderGroupList();
+    updateAllRanges();
+    resizeCanvas();
+    try {
+      const renderer = await createGraphRenderer(canvas.parentElement, canvas, state.visual);
+      if (state.disposed) {
+        renderer.destroy();
+        return;
+      }
+      state.renderer = renderer;
+      state.rendererMode = renderer.backend;
+      renderer.resize(state.width, state.height, state.dpr);
+    } catch (error) {
+      if (state.disposed) return;
+      console.warn("WebGL renderer unavailable; using Canvas fallback", error);
+      state.renderer = null;
+      state.rendererMode = "Canvas";
+    }
+    rebuildGraph({ fit: true });
+    monitorSharedPositions();
+    resizeObserver = new ResizeObserver(resizeCanvas);
+    resizeObserver.observe(canvas.parentElement);
+    bindDprQuery();
     setTimeout(() => {
       if (!state.loadingDismissed) dismissLoading();
     }, 2200);
@@ -364,6 +429,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
         button.setAttribute("aria-expanded", String(open));
       });
     });
+    bindConfigurationControls();
 
     elements.filterSearch.addEventListener("input", debounce(() => {
       state.filterQuery = elements.filterSearch.value.trim();
@@ -412,10 +478,6 @@ import { createGraphRenderer } from "./graph-renderer.js";
       state.showOrphans = elements.orphans.checked;
       rebuildGraph({ fit: false });
     });
-    elements.arrows.addEventListener("change", () => {
-      state.arrows = elements.arrows.checked;
-      scheduleRender();
-    });
     elements.localDepth.addEventListener("input", () => {
       state.localDepth = Number(elements.localDepth.value);
       $("#depth-value").value = state.localDepth;
@@ -423,34 +485,6 @@ import { createGraphRenderer } from "./graph-renderer.js";
       if (state.mode === "local") rebuildGraph({ fit: true });
     });
 
-    bindRange("#text-fade", "#fade-value", (value) => {
-      state.textFade = value;
-      return value.toFixed(2);
-    }, scheduleRender);
-    bindRange("#node-size", "#node-size-value", (value) => {
-      state.nodeScale = value;
-      return value.toFixed(2);
-    }, updateNodeScale);
-    bindRange("#link-thickness", "#link-thickness-value", (value) => {
-      state.linkThickness = value;
-      return value.toFixed(2);
-    }, scheduleRender);
-    bindRange("#center-force", "#center-value", (value) => {
-      state.forces.centerStrength = value;
-      return value.toFixed(2);
-    }, updateForces);
-    bindRange("#repel-force", "#repel-value", (value) => {
-      state.forces.repelStrength = value;
-      return value.toFixed(1);
-    }, updateForces);
-    bindRange("#link-force", "#link-force-value", (value) => {
-      state.forces.linkStrength = value;
-      return value.toFixed(2);
-    }, updateForces);
-    bindRange("#link-distance", "#link-distance-value", (value) => {
-      state.forces.linkDistance = value;
-      return value.toFixed(0);
-    }, updateForces);
 
     elements.orphans.checked = state.showOrphans;
     elements.addGroup.addEventListener("click", addGroup);
@@ -477,15 +511,387 @@ import { createGraphRenderer } from "./graph-renderer.js";
     $(".ribbon-button[aria-label='Settings']").addEventListener("click", () => setPanelOpen(true));
   }
 
-  function bindRange(inputSelector, outputSelector, update, after) {
-    const input = $(inputSelector);
-    const output = $(outputSelector);
-    input.addEventListener("input", () => {
-      const value = Number(input.value);
-      output.value = update(value);
-      updateRangeFill(input);
-      after();
+  function bindConfigurationControls() {
+    elements.presetSelect.addEventListener("change", () => {
+      const preset = getPreset(elements.presetSelect.value, state.presets);
+      if (!preset) return;
+      applyConfig(preset, { baseline: preset });
+      showToast(`Loaded “${preset.name}”`);
     });
+    elements.savePreset.addEventListener("click", () => {
+      const suggestedName = `${state.config.name} variation`;
+      const name = window.prompt("Name this configuration", suggestedName)?.trim();
+      if (!name) return;
+      const preset = saveUserPreset(state.config, name);
+      state.presets = listPresets();
+      applyConfig(preset, { baseline: preset });
+      renderPresetOptions();
+      showToast(`Saved “${preset.name}”`);
+    });
+    elements.deletePreset.addEventListener("click", () => {
+      if (!state.config.id.startsWith("user:")) return;
+      if (!window.confirm(`Delete “${state.config.name}”?`)) return;
+      if (!deleteUserPreset(state.config.id)) return;
+      state.presets = listPresets();
+      const fallback = getPreset(`builtin:${state.config.theme.id}`, state.presets)
+        ?? state.presets[0];
+      applyConfig(fallback, { baseline: fallback });
+      renderPresetOptions();
+      showToast("Configuration deleted");
+    });
+    elements.resetPreset.addEventListener("click", () => {
+      applyConfig(state.baselineConfig, { activeSlot: state.activeSlot });
+      showToast("Configuration reset");
+    });
+
+    bindComparisonSlot(elements.slotA, "a");
+    bindComparisonSlot(elements.slotB, "b");
+    elements.compareView.addEventListener("click", writeComparisonSnapshot);
+    elements.exportConfig.addEventListener("click", exportCurrentConfig);
+    elements.importConfig.addEventListener("click", () => elements.importConfigFile.click());
+    elements.importConfigFile.addEventListener("change", async () => {
+      const [file] = elements.importConfigFile.files;
+      elements.importConfigFile.value = "";
+      if (!file) return;
+      try {
+        const imported = importGraphConfig(await file.text());
+        imported.id = `imported:${Date.now().toString(36)}`;
+        applyConfig(imported, { baseline: imported });
+        renderPresetOptions();
+        showToast(`Imported “${imported.name}”`);
+      } catch (error) {
+        showToast(error.message);
+      }
+    });
+
+    elements.themeOptions.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-theme-id]");
+      if (!option) return;
+      updateConfig((config) => {
+        config.theme.id = option.dataset.themeId;
+      });
+    });
+    elements.materialSelect.addEventListener("change", () => updateConfig((config) => {
+      config.nodeStyle.materialId = elements.materialSelect.value;
+    }));
+    elements.nodeColorMode.addEventListener("change", () => updateConfig((config) => {
+      config.nodeStyle.colorMode = elements.nodeColorMode.value;
+    }));
+    elements.nodeColor.addEventListener("input", () => updateConfig((config) => {
+      config.nodeStyle.color = elements.nodeColor.value;
+    }));
+    elements.nodeSizeMode.addEventListener("change", () => updateConfig((config) => {
+      config.nodeStyle.sizeMode = elements.nodeSizeMode.value;
+    }));
+    elements.edgeColorMode.addEventListener("change", () => updateConfig((config) => {
+      config.edgeStyle.colorMode = elements.edgeColorMode.value;
+    }));
+    elements.edgeColor.addEventListener("input", () => updateConfig((config) => {
+      config.edgeStyle.color = elements.edgeColor.value;
+    }));
+    elements.edgeFocusColor.addEventListener("input", () => updateConfig((config) => {
+      config.edgeStyle.focusColor = elements.edgeFocusColor.value;
+    }));
+    elements.arrows.addEventListener("change", () => updateConfig((config) => {
+      config.edgeStyle.arrows = elements.arrows.checked;
+    }));
+    elements.vignette.addEventListener("change", () => updateConfig((config) => {
+      config.display.vignette = elements.vignette.checked;
+    }));
+    elements.labelDensity.addEventListener("change", () => updateConfig((config) => {
+      config.display.labelDensity = elements.labelDensity.value;
+    }));
+
+    bindConfigRange("#text-fade", "#fade-value", (config, value) => {
+      config.display.textFade = value;
+    });
+    bindConfigRange("#node-size", "#node-size-value", (config, value) => {
+      config.nodeStyle.scale = value;
+    });
+    bindConfigRange("#link-thickness", "#link-thickness-value", (config, value) => {
+      config.edgeStyle.thickness = value;
+    });
+    bindConfigRange("#edge-opacity", "#edge-opacity-value", (config, value) => {
+      config.edgeStyle.opacity = value;
+    });
+    bindConfigRange("#center-force", "#center-value", (config, value) => {
+      config.layout.centerStrength = value;
+    });
+    bindConfigRange("#repel-force", "#repel-value", (config, value) => {
+      config.layout.repelStrength = value;
+    });
+    bindConfigRange("#link-force", "#link-force-value", (config, value) => {
+      config.layout.linkStrength = value;
+    });
+    bindConfigRange("#link-distance", "#link-distance-value", (config, value) => {
+      config.layout.linkDistance = value;
+    });
+  }
+
+  function bindConfigRange(inputSelector, outputSelector, mutate) {
+    const input = $(inputSelector);
+    input.addEventListener("input", () => updateConfig((config) => {
+      mutate(config, Number(input.value));
+    }));
+  }
+
+  function updateConfig(mutate) {
+    const next = cloneConfig(state.config);
+    mutate(next);
+    applyConfig(next);
+  }
+
+  function applyConfig(value, { baseline = null, activeSlot = null } = {}) {
+    const previousConfig = state.config;
+    const nextConfig = normalizeGraphConfig(value);
+    const changes = classifyConfigChange(previousConfig, nextConfig);
+    const nextVisual = resolveVisualConfig(nextConfig);
+    const themeChanged = previousConfig.theme.id !== nextConfig.theme.id;
+
+    state.config = nextConfig;
+    state.visual = nextVisual;
+    state.arrows = nextConfig.edgeStyle.arrows;
+    state.textFade = labelThreshold(nextConfig);
+    state.nodeScale = nextConfig.nodeStyle.scale;
+    state.linkThickness = nextConfig.edgeStyle.thickness;
+    state.forces = { ...nextConfig.layout };
+    state.activeSlot = activeSlot;
+    if (baseline) state.baselineConfig = cloneConfig(baseline);
+
+    applyDocumentConfig(nextConfig, nextVisual);
+    if (themeChanged) {
+      state.groups.forEach((group, index) => {
+        if (group.id.startsWith("group-")) group.color = nextVisual.palette[index % nextVisual.palette.length];
+      });
+      renderGroupList();
+    }
+    if (changes.radii) applyNodeSizeMode();
+    if (changes.visual) {
+      applyGroupColors();
+      state.renderer?.setVisualConfig(nextVisual);
+    }
+
+    if (changes.topology) rebuildGraph({ fit: false });
+    else {
+      if (changes.radii) updateNodeScale();
+      if (changes.forces) updateForces();
+    }
+
+    saveCurrentConfig(nextConfig);
+    syncConfigControls();
+    renderComparisonSlots();
+    if (themeChanged) requestAnimationFrame(resizeCanvas);
+    scheduleRender();
+  }
+
+  function renderThemeOptions() {
+    const options = Object.values(THEMES).map((theme) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "theme-option";
+      button.dataset.themeId = theme.id;
+      button.setAttribute("role", "radio");
+      const name = document.createElement("strong");
+      name.textContent = theme.name;
+      const description = document.createElement("span");
+      description.textContent = theme.description;
+      button.append(name, description);
+      return button;
+    });
+    elements.themeOptions.replaceChildren(...options);
+  }
+
+  function renderMaterialOptions() {
+    elements.materialSelect.replaceChildren(...Object.values(MATERIALS).map((material) => {
+      const option = document.createElement("option");
+      option.value = material.id;
+      option.textContent = material.name;
+      return option;
+    }));
+  }
+
+  function renderPresetOptions() {
+    const builtins = state.presets.filter((preset) => preset.id.startsWith("builtin:"));
+    const users = state.presets.filter((preset) => preset.id.startsWith("user:"));
+    const groups = [presetOptionGroup("Built-in", builtins)];
+    if (users.length) groups.push(presetOptionGroup("Saved studies", users));
+    if (!state.presets.some((preset) => preset.id === state.config.id)) {
+      const current = document.createElement("option");
+      current.value = state.config.id;
+      current.textContent = `${state.config.name} · current`;
+      groups.push(current);
+    }
+    elements.presetSelect.replaceChildren(...groups);
+    elements.presetSelect.value = state.config.id;
+    syncPresetState();
+  }
+
+  function presetOptionGroup(label, presets) {
+    const group = document.createElement("optgroup");
+    group.label = label;
+    group.append(...presets.map((preset) => {
+      const option = document.createElement("option");
+      option.value = preset.id;
+      option.textContent = preset.name;
+      return option;
+    }));
+    return group;
+  }
+
+  function syncConfigControls() {
+    const config = state.config;
+    if (elements.presetSelect.options.length) {
+      if (![...elements.presetSelect.options].some((option) => option.value === config.id)) renderPresetOptions();
+      else elements.presetSelect.value = config.id;
+    }
+    $$("[data-theme-id]", elements.themeOptions).forEach((button) => {
+      button.setAttribute("aria-checked", String(button.dataset.themeId === config.theme.id));
+    });
+    elements.materialSelect.value = config.nodeStyle.materialId;
+    elements.nodeColorMode.value = config.nodeStyle.colorMode;
+    elements.nodeColor.value = config.nodeStyle.color;
+    elements.nodeColor.disabled = config.nodeStyle.colorMode !== "fixed";
+    elements.nodeSizeMode.value = config.nodeStyle.sizeMode;
+    elements.edgeColorMode.value = config.edgeStyle.colorMode;
+    elements.edgeColor.value = config.edgeStyle.color;
+    elements.edgeFocusColor.value = config.edgeStyle.focusColor;
+    const customEdges = config.edgeStyle.colorMode === "fixed";
+    elements.edgeColor.disabled = !customEdges;
+    elements.edgeFocusColor.disabled = !customEdges;
+    elements.arrows.checked = config.edgeStyle.arrows;
+    elements.vignette.checked = config.display.vignette;
+    elements.labelDensity.value = config.display.labelDensity;
+    setRangeValue("#text-fade", "#fade-value", config.display.textFade, 2);
+    setRangeValue("#node-size", "#node-size-value", config.nodeStyle.scale, 2);
+    setRangeValue("#link-thickness", "#link-thickness-value", config.edgeStyle.thickness, 2);
+    setRangeValue("#edge-opacity", "#edge-opacity-value", config.edgeStyle.opacity ?? state.visual.edgeAlpha, 2);
+    setRangeValue("#center-force", "#center-value", config.layout.centerStrength, 2);
+    setRangeValue("#repel-force", "#repel-value", config.layout.repelStrength, 1);
+    setRangeValue("#link-force", "#link-force-value", config.layout.linkStrength, 2);
+    setRangeValue("#link-distance", "#link-distance-value", config.layout.linkDistance, 0);
+    syncPresetState();
+  }
+
+  function setRangeValue(inputSelector, outputSelector, value, digits) {
+    const input = $(inputSelector);
+    input.value = String(value);
+    $(outputSelector).value = Number(value).toFixed(digits);
+    updateRangeFill(input);
+  }
+
+  function syncPresetState() {
+    const dirty = configFingerprint(state.config) !== configFingerprint(state.baselineConfig);
+    const known = state.presets.find((preset) => preset.id === state.config.id);
+    elements.presetKind.textContent = state.activeSlot
+      ? `Slot ${state.activeSlot.toUpperCase()}`
+      : known?.id.startsWith("user:")
+        ? "Saved study"
+        : known
+          ? "Built-in"
+          : "Imported";
+    elements.presetState.textContent = dirty ? "Modified" : "Saved";
+    elements.presetState.classList.toggle("is-dirty", dirty);
+    elements.deletePreset.disabled = !state.config.id.startsWith("user:");
+    elements.resetPreset.disabled = !dirty;
+  }
+
+  function bindComparisonSlot(button, slot) {
+    button.addEventListener("click", (event) => {
+      const stored = state.comparisonSlots[slot];
+      if (!stored || event.shiftKey) {
+        state.comparisonSlots = saveComparisonSlot(slot, state.config);
+        state.activeSlot = slot;
+        renderComparisonSlots();
+        syncPresetState();
+        showToast(`Stored current style in slot ${slot.toUpperCase()}`);
+        return;
+      }
+      applyConfig(stored, { baseline: stored, activeSlot: slot });
+      showToast(`Loaded slot ${slot.toUpperCase()}`);
+    });
+  }
+
+  function renderComparisonSlots() {
+    for (const slot of ["a", "b"]) {
+      const button = slot === "a" ? elements.slotA : elements.slotB;
+      const stored = state.comparisonSlots[slot];
+      const label = stored ? configDisplayName(stored) : `Set ${slot.toUpperCase()}`;
+      $("span", button).textContent = label;
+      const active = Boolean(stored) && configFingerprint(stored) === configFingerprint(state.config);
+      button.classList.toggle("is-active", active);
+      button.title = stored
+        ? `${label}. Click to load; Shift-click to replace.`
+        : `Store the current configuration in slot ${slot.toUpperCase()}.`;
+      button.setAttribute("aria-label", stored
+        ? `Load comparison slot ${slot.toUpperCase()}, ${label}`
+        : `Store current configuration in slot ${slot.toUpperCase()}`);
+    }
+  }
+
+  function writeComparisonSnapshot() {
+    const groupIndexByNode = new Map();
+    state.visibleNodes.forEach((node) => {
+      const groupIndex = state.groups.findIndex((group) => group.enabled && groupMatches(group, node));
+      groupIndexByNode.set(node.id, groupIndex);
+    });
+    const snapshot = {
+      version: 1,
+      createdAt: new Date().toISOString(),
+      source: "live",
+      graph: {
+        mode: state.mode,
+        nodes: state.visibleNodes.map((node) => ({
+          id: node.id,
+          name: node.name,
+          type: node.type,
+          degree: node.degree,
+          naturalRadius: node.naturalRadius,
+          radius: node.radius,
+          groupIndex: groupIndexByNode.get(node.id),
+          x: node.x,
+          y: node.y
+        })),
+        links: state.visibleLinks.map((link) => ({
+          id: link.id,
+          source: link.source,
+          target: link.target,
+          type: link.type
+        }))
+      },
+      camera: { ...state.camera },
+      viewport: {
+        width: state.width,
+        height: state.height,
+        dpr: state.dpr
+      },
+      config: cloneConfig(state.config),
+      slots: {
+        a: state.comparisonSlots.a ? cloneConfig(state.comparisonSlots.a) : null,
+        b: state.comparisonSlots.b ? cloneConfig(state.comparisonSlots.b) : null
+      }
+    };
+    try {
+      window.sessionStorage.setItem("atlas-graph-comparison:v1:snapshot", JSON.stringify(snapshot));
+    } catch (error) {
+      console.warn("Unable to store comparison snapshot", error);
+    }
+  }
+
+  function exportCurrentConfig() {
+    const blob = new Blob([exportGraphConfig(state.config)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const filename = configDisplayName(state.config).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "atlas-graph-config";
+    anchor.href = url;
+    anchor.download = `${filename}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    showToast("Configuration exported");
+  }
+
+  function labelThreshold(config) {
+    const offset = config.display.labelDensity === "quiet" ? 0.16 : config.display.labelDensity === "dense" ? -0.16 : 0;
+    return clamp(config.display.textFade + offset, 0, 1);
   }
 
   function updateAllRanges() {
@@ -761,6 +1167,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     state.visibleNodes = [...allowedIds].map((id) => ({ ...poolById.get(id) }));
     state.visibleLinks = poolLinks.filter((link) => allowedIds.has(link.source) && allowedIds.has(link.target));
     state.visibleById = new Map(state.visibleNodes.map((node) => [node.id, node]));
+    applyNodeSizeMode();
     buildAdjacency();
     applyGroupColors();
 
@@ -845,7 +1252,16 @@ import { createGraphRenderer } from "./graph-renderer.js";
   }
 
   function applyGroupColors() {
+    const { nodeColorMode, nodeColor, mutedNode, syntheticColors } = state.visual;
     state.visibleNodes.forEach((node) => {
+      if (nodeColorMode === "fixed") {
+        node.color = nodeColor;
+        return;
+      }
+      if (nodeColorMode === "type") {
+        node.color = syntheticColors[node.type] ?? state.visual.palette[typeColorIndex(node.type) % state.visual.palette.length];
+        return;
+      }
       if (node.type !== "note") {
         node.color = syntheticColors[node.type] ?? mutedNode;
         return;
@@ -853,6 +1269,21 @@ import { createGraphRenderer } from "./graph-renderer.js";
       const matching = state.groups.find((group) => group.enabled && groupMatches(group, node));
       node.color = matching?.color ?? mutedNode;
     });
+  }
+
+  function typeColorIndex(type) {
+    return type === "note" ? 0 : type === "tag" ? 1 : type === "attachment" ? 2 : type === "unresolved" ? 3 : 4;
+  }
+
+  function applyNodeSizeMode() {
+    state.visibleNodes.forEach((node) => {
+      node.radius = baseRadius(node);
+    });
+  }
+
+  function baseRadius(node) {
+    if (state.config.nodeStyle.sizeMode !== "fixed") return node.naturalRadius;
+    return node.type === "note" ? 3.5 : node.type === "tag" ? 3.2 : node.type === "attachment" ? 2.7 : 2.5;
   }
 
   function groupMatches(group, node) {
@@ -1038,13 +1469,14 @@ import { createGraphRenderer } from "./graph-renderer.js";
   }
 
   function scheduleRender() {
-    if (state.renderPending) return;
+    if (state.disposed || state.renderPending) return;
     state.renderPending = true;
     requestAnimationFrame(render);
   }
 
   function render() {
     state.renderPending = false;
+    if (state.disposed) return;
     if (state.renderer) {
       context.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
       context.clearRect(0, 0, state.width, state.height);
@@ -1096,17 +1528,17 @@ import { createGraphRenderer } from "./graph-renderer.js";
 
       const connected = focusId && (link.source === focusId || link.target === focusId);
       const faded = focusId && !connected;
-      const alpha = connected ? visualTheme.edgeFocusAlpha : faded ? visualTheme.edgeFadedAlpha : visualTheme.edgeAlpha;
-      if (visualTheme.material) {
-        context.strokeStyle = colorWithAlpha(visualTheme.edgeUnderlay, visualTheme.edgeUnderlayAlpha * (faded ? 0.55 : 1));
-        context.lineWidth = visualTheme.edgeUnderlayWidth * state.linkThickness;
+      const alpha = connected ? state.visual.edgeFocusAlpha : faded ? state.visual.edgeFadedAlpha : state.visual.edgeAlpha;
+      if (state.visual.material) {
+        context.strokeStyle = colorWithAlpha(state.visual.edgeUnderlay, state.visual.edgeUnderlayAlpha * (faded ? 0.55 : 1));
+        context.lineWidth = state.visual.edgeUnderlayWidth * state.linkThickness;
         context.beginPath();
         context.moveTo(sourcePoint.x, sourcePoint.y);
         context.lineTo(targetPoint.x, targetPoint.y);
         context.stroke();
       }
-      context.strokeStyle = colorWithAlpha(connected ? visualTheme.linkFocus : visualTheme.link, alpha);
-      context.lineWidth = Math.max(0.35, state.linkThickness * (connected ? visualTheme.material ? visualTheme.edgeFocusWidth : 1.16 : visualTheme.material ? visualTheme.edgeMainWidth : 0.62));
+      context.strokeStyle = colorWithAlpha(connected ? state.visual.linkFocus : state.visual.link, alpha);
+      context.lineWidth = Math.max(0.35, state.linkThickness * (connected ? state.visual.material ? state.visual.edgeFocusWidth : 1.16 : state.visual.material ? state.visual.edgeMainWidth : 0.62));
       context.beginPath();
       context.moveTo(sourcePoint.x, sourcePoint.y);
       context.lineTo(targetPoint.x, targetPoint.y);
@@ -1128,7 +1560,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     const tipX = targetPoint.x - ux * (nodeRadius + 2);
     const tipY = targetPoint.y - uy * (nodeRadius + 2);
     const size = 3.2;
-    context.fillStyle = colorWithAlpha(visualTheme.arrow, Math.min(0.7, alpha + 0.14));
+    context.fillStyle = colorWithAlpha(state.visual.arrow, Math.min(0.7, alpha + 0.14));
     context.beginPath();
     context.moveTo(tipX, tipY);
     context.lineTo(tipX - ux * size - uy * size * 0.72, tipY - uy * size + ux * size * 0.72);
@@ -1151,7 +1583,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
       const isSearchMatch = searchMatches?.has(node.id);
       const faded = focusId && !isFocus && !isNeighbor;
       const searchFaded = searchMatches && searchMatches.size && !isSearchMatch;
-      const alpha = faded ? visualTheme.nodeFadedAlpha : searchFaded ? visualTheme.nodeSearchFadedAlpha : node.isOrphan ? 0.48 : visualTheme.nodeAlpha;
+      const alpha = faded ? state.visual.nodeFadedAlpha : searchFaded ? state.visual.nodeSearchFadedAlpha : node.isOrphan ? 0.48 : state.visual.nodeAlpha;
 
       if (isFocus || isSelected || isSearchMatch) {
         const glowRadius = radius * (isSelected ? 3.8 : 3.1) + 5;
@@ -1164,37 +1596,37 @@ import { createGraphRenderer } from "./graph-renderer.js";
         context.fill();
       }
 
-      if (visualTheme.material) {
-        const offset = materialOffset(node.id, radius * visualTheme.auraOffset);
-        if (visualTheme.auraAlpha > 0) {
-          context.fillStyle = colorWithAlpha(node.color, alpha * visualTheme.auraAlpha);
-          drawCanvasNodeShape(node, point.x + offset.x, point.y + offset.y, radius * visualTheme.auraScale);
+      if (state.visual.material) {
+        const offset = materialOffset(node.id, radius * state.visual.auraOffset);
+        if (state.visual.auraAlpha > 0) {
+          context.fillStyle = colorWithAlpha(node.color, alpha * state.visual.auraAlpha);
+          drawCanvasNodeShape(node, point.x + offset.x, point.y + offset.y, radius * state.visual.auraScale);
           context.fill();
         }
-        context.strokeStyle = colorWithAlpha(visualTheme.rimColor, alpha * visualTheme.rimAlpha);
-        context.lineWidth = Math.max(0.45, visualTheme.rimWidth);
-        drawCanvasNodeShape(node, point.x, point.y, radius + visualTheme.rimWidth);
+        context.strokeStyle = colorWithAlpha(state.visual.rimColor, alpha * state.visual.rimAlpha);
+        context.lineWidth = Math.max(0.45, state.visual.rimWidth);
+        drawCanvasNodeShape(node, point.x, point.y, radius + state.visual.rimWidth);
         context.stroke();
         if (node.type === "unresolved") {
-          context.strokeStyle = colorWithAlpha(node.color, alpha * visualTheme.nodeFillAlpha);
-          context.lineWidth = Math.max(0.65, visualTheme.keylineWidth);
+          context.strokeStyle = colorWithAlpha(node.color, alpha * state.visual.nodeFillAlpha);
+          context.lineWidth = Math.max(0.65, state.visual.keylineWidth);
           drawCanvasNodeShape(node, point.x, point.y, radius);
           context.stroke();
         } else {
-          context.fillStyle = colorWithAlpha(node.color, alpha * visualTheme.nodeFillAlpha);
+          context.fillStyle = colorWithAlpha(node.color, alpha * state.visual.nodeFillAlpha);
           drawCanvasNodeShape(node, point.x, point.y, radius);
           context.fill();
-          context.strokeStyle = colorWithAlpha(visualTheme.keylineColor, alpha * visualTheme.keylineAlpha);
-          context.lineWidth = Math.max(0.45, visualTheme.keylineWidth);
-          drawCanvasNodeShape(node, point.x, point.y, Math.max(1, radius - visualTheme.keylineWidth * 0.5));
+          context.strokeStyle = colorWithAlpha(state.visual.keylineColor, alpha * state.visual.keylineAlpha);
+          context.lineWidth = Math.max(0.45, state.visual.keylineWidth);
+          drawCanvasNodeShape(node, point.x, point.y, Math.max(1, radius - state.visual.keylineWidth * 0.5));
           context.stroke();
-          if (radius >= 3.2 && visualTheme.coreAlpha > 0) {
-            context.fillStyle = colorWithAlpha(visualTheme.coreColor, alpha * visualTheme.coreAlpha);
+          if (radius >= 3.2 && state.visual.coreAlpha > 0) {
+            context.fillStyle = colorWithAlpha(state.visual.coreColor, alpha * state.visual.coreAlpha);
             context.beginPath();
             context.arc(
-              point.x + radius * visualTheme.coreOffsetX,
-              point.y + radius * visualTheme.coreOffsetY,
-              Math.max(0.55, radius * visualTheme.coreScale),
+              point.x + radius * state.visual.coreOffsetX,
+              point.y + radius * state.visual.coreOffsetY,
+              Math.max(0.55, radius * state.visual.coreScale),
               0,
               Math.PI * 2
             );
@@ -1225,10 +1657,10 @@ import { createGraphRenderer } from "./graph-renderer.js";
       }
 
       if (isSelected || state.pinned.has(node.id)) {
-        context.strokeStyle = colorWithAlpha(isSelected ? visualTheme.selection : visualTheme.pinned, isSelected ? visualTheme.selectionAlpha : 0.52);
-        context.lineWidth = visualTheme.material ? visualTheme.ringWidth : isSelected ? 1.15 : 0.8;
+        context.strokeStyle = colorWithAlpha(isSelected ? state.visual.selection : state.visual.pinned, isSelected ? state.visual.selectionAlpha : 0.52);
+        context.lineWidth = state.visual.material ? state.visual.ringWidth : isSelected ? 1.15 : 0.8;
         context.beginPath();
-        context.arc(point.x, point.y, radius + (visualTheme.material ? visualTheme.ringGap : 2.6), 0, Math.PI * 2);
+        context.arc(point.x, point.y, radius + (state.visual.material ? state.visual.ringGap : 2.6), 0, Math.PI * 2);
         context.stroke();
       }
     }
@@ -1255,15 +1687,15 @@ import { createGraphRenderer } from "./graph-renderer.js";
       const focused = node.id === focusId || node.id === state.selectedId;
       const neighbor = focusNeighbors?.has(node.id);
       const faded = focusId && !focused && !neighbor;
-      const fontSize = (focused ? 11.5 : Math.min(10.5, 8.2 + state.camera.scale * 1.15)) * visualTheme.labelSize;
-      context.font = `${focused ? 500 : 400} ${fontSize}px ${visualTheme.fontFamily}`;
+      const fontSize = (focused ? 11.5 : Math.min(10.5, 8.2 + state.camera.scale * 1.15)) * state.visual.labelSize;
+      context.font = `${focused ? 500 : 400} ${fontSize}px ${state.visual.fontFamily}`;
       const label = truncateLabel(node.name, focused ? 55 : state.camera.scale > 1.35 ? 38 : 27);
       const width = context.measureText(label).width;
       const radius = Math.max(1.15, node.radius * state.nodeScale * state.camera.scale);
       const rect = { x: point.x + radius + 4, y: point.y - fontSize / 2 - 1, width: width + 3, height: fontSize + 2 };
       if (priority <= 1 && occupied.some((other) => rectanglesOverlap(rect, other))) continue;
       occupied.push(rect);
-      context.fillStyle = focused ? colorWithAlpha(visualTheme.labelFocus, 0.94) : faded ? colorWithAlpha(visualTheme.labelFaded, visualTheme.labelFadedAlpha) : colorWithAlpha(visualTheme.label, visualTheme.labelAlpha);
+      context.fillStyle = focused ? colorWithAlpha(state.visual.labelFocus, 0.94) : faded ? colorWithAlpha(state.visual.labelFaded, state.visual.labelFadedAlpha) : colorWithAlpha(state.visual.label, state.visual.labelAlpha);
       context.fillText(label, rect.x, point.y + 0.3);
     }
     context.restore();
@@ -1680,145 +2112,6 @@ import { createGraphRenderer } from "./graph-renderer.js";
     elements.toast.classList.add("is-visible");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => elements.toast.classList.remove("is-visible"), 1900);
-  }
-
-  function getVisualPreset(theme, material) {
-    const materialPresets = {
-      "mineral-glaze": {
-        folderColors: ["#4b9b93", "#ae8063", "#718e78", "#a9945e", "#7e76a0", "#5f8fa5", "#a66f7d", "#7d9161"],
-        mutedNode: "#748b88",
-        syntheticColors: { tag: "#6eb7a8", attachment: "#6294a7", unresolved: "#718081", orphan: "#586865" },
-        textFade: 0.5,
-        nodeScale: 1.14,
-        linkThickness: 1.02,
-        panelOpen: false
-      },
-      "enamel-double-line": {
-        folderColors: ["#c06c64", "#5f9bad", "#d09a56", "#729a72", "#9a7ab5", "#c07c9a", "#8d9f5d", "#b67c55"],
-        mutedNode: "#96898b",
-        syntheticColors: { tag: "#b779a9", attachment: "#639cb0", unresolved: "#867c7d", orphan: "#675e60" },
-        textFade: 0.5,
-        nodeScale: 1.12,
-        linkThickness: 1.03,
-        panelOpen: false
-      },
-      "ink-bloom": {
-        folderColors: ["#78998b", "#967f71", "#8190a0", "#9c8e67", "#867f98", "#78969b", "#9b7f87", "#7f8f70"],
-        mutedNode: "#78837d",
-        syntheticColors: { tag: "#869d91", attachment: "#7d959e", unresolved: "#737a75", orphan: "#5d655f" },
-        textFade: 0.48,
-        nodeScale: 1.16,
-        linkThickness: 1,
-        panelOpen: false
-      },
-      "precision-metal": {
-        folderColors: ["#76909b", "#a07e72", "#7d9587", "#a18e67", "#85809b", "#6f9298", "#9b7c88", "#889477"],
-        mutedNode: "#78858b",
-        syntheticColors: { tag: "#889ba2", attachment: "#6f98a6", unresolved: "#6c777c", orphan: "#566168" },
-        textFade: 0.52,
-        nodeScale: 1.12,
-        linkThickness: 1.04,
-        panelOpen: false
-      }
-    };
-    if (materialPresets[material]) return materialPresets[material];
-    const presets = {
-      "editorial-atlas": {
-        folderColors: ["#315e63", "#a65b43", "#7c874d", "#b1833e", "#735b7b", "#4f7481", "#9a6d5e", "#66704b"],
-        mutedNode: "#817d70",
-        syntheticColors: { tag: "#9b563f", attachment: "#486f73", unresolved: "#8e8778", orphan: "#777267" },
-        textFade: 0.48,
-        nodeScale: 1.1,
-        linkThickness: 1.05,
-        panelOpen: false
-      },
-      "luminous-map": {
-        folderColors: ["#72dfce", "#efb64f", "#eb7d72", "#5fb6d4", "#a88adf", "#75c985", "#d68bb6", "#80a9ef"],
-        mutedNode: "#68858a",
-        syntheticColors: { tag: "#63dbc9", attachment: "#62aecd", unresolved: "#61767b", orphan: "#4c6267" },
-        textFade: 0.5,
-        nodeScale: 1.13,
-        linkThickness: 1.04,
-        panelOpen: false
-      },
-      "research-console": {
-        folderColors: ["#9fbd8b", "#d4b273", "#8aa8a0", "#c78470", "#7996b1", "#b48da3", "#a0a879", "#8d9d87"],
-        mutedNode: "#7a897b",
-        syntheticColors: { tag: "#a8c991", attachment: "#7da39a", unresolved: "#748078", orphan: "#5f6b61" },
-        textFade: 0.52,
-        nodeScale: 1.02,
-        linkThickness: 1,
-        panelOpen: true
-      },
-      "obsidian-echo": {
-        folderColors: ["#b091e5", "#73aec4", "#d58eaa", "#d1ab65", "#70b19f", "#da8e74", "#a2b574", "#b18dca"],
-        mutedNode: "#9a949d",
-        syntheticColors: { tag: "#ad91e4", attachment: "#75abc5", unresolved: "#817c83", orphan: "#676269" },
-        textFade: 0.5,
-        nodeScale: 1.08,
-        linkThickness: 1,
-        panelOpen: false
-      }
-    };
-    return presets[theme] ?? {
-      folderColors: ["#a995df", "#72a0c7", "#d08da6", "#c7a262", "#69a999", "#cf8972", "#98aa6f", "#aa86c4"],
-      mutedNode: "#918f8b",
-      syntheticColors: { tag: "#9d84d8", attachment: "#6f9fbe", unresolved: "#777471", orphan: "#5f5d5a" },
-      textFade: 0.55,
-      nodeScale: 1,
-      linkThickness: 0.9,
-      panelOpen: true
-    };
-  }
-
-  function readCanvasTheme() {
-    const style = getComputedStyle(document.documentElement);
-    const color = (name, fallback) => style.getPropertyValue(name).trim() || fallback;
-    const number = (name, fallback) => Number.parseFloat(style.getPropertyValue(name)) || fallback;
-    return {
-      material: Boolean(document.body.dataset.material),
-      link: color("--graph-link", "#868581"),
-      linkFocus: color("--graph-link-focus", "#c2bad3"),
-      arrow: color("--graph-arrow", "#aaa5b0"),
-      selection: color("--graph-selection", "#e5dffc"),
-      pinned: color("--graph-pinned", "#b0a3ce"),
-      label: color("--graph-label", "#b4b0ab"),
-      labelFocus: color("--graph-label-focus", "#e7e3eb"),
-      labelFaded: color("--graph-label-faded", "#7e7b78"),
-      edgeAlpha: number("--graph-edge-alpha", 0.115),
-      edgeFadedAlpha: number("--graph-edge-faded-alpha", 0.018),
-      edgeFocusAlpha: number("--graph-edge-focus-alpha", 0.62),
-      nodeAlpha: number("--graph-node-alpha", 0.86),
-      nodeFadedAlpha: number("--graph-node-faded-alpha", 0.12),
-      nodeSearchFadedAlpha: number("--graph-node-search-faded-alpha", 0.17),
-      labelAlpha: number("--graph-label-alpha", 0.57),
-      labelFadedAlpha: number("--graph-label-faded-alpha", 0.08),
-      labelSize: number("--graph-label-size", 1),
-      selectionAlpha: number("--graph-selection-alpha", 0.78),
-      nodeFillAlpha: number("--material-node-fill-alpha", 1),
-      rimColor: color("--material-rim-color", "#ffffff"),
-      rimAlpha: number("--material-rim-alpha", 0),
-      rimWidth: number("--material-rim-width", 0),
-      keylineColor: color("--material-keyline-color", "#000000"),
-      keylineAlpha: number("--material-keyline-alpha", 0),
-      keylineWidth: number("--material-keyline-width", 0),
-      coreColor: color("--material-core-color", "#ffffff"),
-      coreAlpha: number("--material-core-alpha", 0),
-      coreScale: number("--material-core-scale", 0.25),
-      coreOffsetX: number("--material-core-offset-x", 0),
-      coreOffsetY: number("--material-core-offset-y", 0),
-      auraAlpha: number("--material-aura-alpha", 0),
-      auraScale: number("--material-aura-scale", 1.5),
-      auraOffset: number("--material-aura-offset", 0),
-      ringGap: number("--material-ring-gap", 2.6),
-      ringWidth: number("--material-ring-width", 1),
-      edgeUnderlay: color("--material-edge-underlay", "#000000"),
-      edgeUnderlayAlpha: number("--material-edge-underlay-alpha", 0),
-      edgeUnderlayWidth: number("--material-edge-underlay-width", 1.8),
-      edgeMainWidth: number("--material-edge-main-width", 0.62),
-      edgeFocusWidth: number("--material-edge-focus-width", 1.16),
-      fontFamily: style.getPropertyValue("--font-interface").trim() || '"Segoe UI Variable Text", "Segoe UI", sans-serif'
-    };
   }
 
   function debounce(callback, delay) {

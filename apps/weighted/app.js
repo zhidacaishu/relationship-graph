@@ -1,4 +1,10 @@
 import { createGraphRenderer } from "./graph-renderer.js";
+import {
+  DEFAULT_GRAPH_SEMANTICS,
+  normalizeGraphSemantics,
+  resolveLinkStroke,
+  weightChannelEnabled
+} from "./graph-semantics.js";
 
 (() => {
   "use strict";
@@ -14,6 +20,8 @@ import { createGraphRenderer } from "./graph-renderer.js";
   const canvas = $("#graph-canvas");
   const context = canvas.getContext("2d", { alpha: true, desynchronized: true });
   const topicColors = ["#a992ee", "#72a8db", "#df8ca9", "#d4aa62", "#72baa8", "#dc8c70", "#a3b76d", "#b58bd2"];
+  const SEMANTICS_STORAGE_KEY = "atlas-graph-config:v1:weighted-semantics";
+  const initialSemantics = loadSemantics();
   const mutedNode = "#8e8b88";
   const syntheticColors = {
     tag: "#a88ce8",
@@ -38,6 +46,9 @@ import { createGraphRenderer } from "./graph-renderer.js";
     existing: $("#toggle-existing"),
     orphans: $("#toggle-orphans"),
     arrows: $("#toggle-arrows"),
+    weightLayout: $("#weight-layout"),
+    weightEdgeStyle: $("#weight-edge-style"),
+    semanticsNote: $("#semantics-note"),
     localDepth: $("#local-depth"),
     localDepthRow: $("#local-depth-row"),
     animate: $("#animate-graph"),
@@ -80,6 +91,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     existingOnly: true,
     showOrphans: false,
     arrows: false,
+    semantics: initialSemantics,
     textFade: 0.55,
     nodeScale: 1.1,
     linkThickness: 1,
@@ -123,6 +135,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     renderer: null,
     rendererMode: "Canvas",
     renderPending: false,
+    disposed: false,
     resizeObserver: null,
     dprMedia: null,
     dprListener: null,
@@ -182,6 +195,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
   initialize();
 
   async function initialize() {
+    window.addEventListener("beforeunload", cleanup, { once: true });
     state.worker = new Worker(new URL("./graph-worker.js", import.meta.url), { type: "module" });
     state.worker.addEventListener("message", handleWorkerMessage);
     state.worker.addEventListener("error", handleWorkerError);
@@ -189,12 +203,19 @@ import { createGraphRenderer } from "./graph-renderer.js";
     bindCanvasControls();
     renderGroupList();
     updateAllRanges();
+    syncSemanticsControls();
     resizeCanvas();
     try {
-      state.renderer = await createGraphRenderer(canvas.parentElement, canvas);
-      state.rendererMode = state.renderer.backend;
-      state.renderer.resize(state.width, state.height, state.dpr);
+      const renderer = await createGraphRenderer(canvas.parentElement, canvas);
+      if (state.disposed) {
+        renderer.destroy();
+        return;
+      }
+      state.renderer = renderer;
+      state.rendererMode = renderer.backend;
+      renderer.resize(state.width, state.height, state.dpr);
     } catch (error) {
+      if (state.disposed) return;
       console.warn("WebGL renderer unavailable; using Canvas fallback", error);
       state.renderer = null;
       state.rendererMode = "Canvas";
@@ -204,7 +225,6 @@ import { createGraphRenderer } from "./graph-renderer.js";
     state.resizeObserver = new ResizeObserver(() => resizeCanvas());
     state.resizeObserver.observe(canvas.parentElement);
     bindDprListener();
-    window.addEventListener("beforeunload", cleanup);
     setTimeout(() => {
       if (!state.loadingDismissed) dismissLoading();
     }, 2200);
@@ -372,6 +392,21 @@ import { createGraphRenderer } from "./graph-renderer.js";
       state.arrows = elements.arrows.checked;
       scheduleRender();
     });
+    $$("[data-semantics-mode]").forEach((button) => {
+      button.addEventListener("click", () => setSemanticsMode(button.dataset.semanticsMode));
+    });
+    elements.weightLayout.addEventListener("change", () => {
+      state.semantics.weightAffectsLayout = elements.weightLayout.checked;
+      updateWeightLayout();
+      saveSemantics();
+      syncSemanticsControls();
+    });
+    elements.weightEdgeStyle.addEventListener("change", () => {
+      state.semantics.weightAffectsEdgeStyle = elements.weightEdgeStyle.checked;
+      saveSemantics();
+      syncSemanticsControls();
+      scheduleRender();
+    });
     elements.localDepth.addEventListener("input", () => {
       state.localDepth = Number(elements.localDepth.value);
       $("#depth-value").value = state.localDepth;
@@ -451,6 +486,71 @@ import { createGraphRenderer } from "./graph-renderer.js";
     const max = Number(input.max);
     const progress = (Number(input.value) - min) / (max - min) * 100;
     input.style.setProperty("--range-fill", `${progress}%`);
+  }
+
+  function setSemanticsMode(mode) {
+    const nextMode = mode === "unweighted" ? "unweighted" : "weighted";
+    if (nextMode === state.semantics.mode) return;
+    const layoutWasEnabled = weightChannelEnabled(state.semantics, "weightAffectsLayout");
+    state.semantics.mode = nextMode;
+    const layoutIsEnabled = weightChannelEnabled(state.semantics, "weightAffectsLayout");
+    if (layoutWasEnabled !== layoutIsEnabled) updateWeightLayout();
+    saveSemantics();
+    syncSemanticsControls();
+    scheduleRender();
+  }
+
+  function syncSemanticsControls() {
+    const weighted = state.semantics.mode === "weighted";
+    $$("[data-semantics-mode]").forEach((button) => {
+      const active = button.dataset.semanticsMode === state.semantics.mode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    elements.weightLayout.checked = state.semantics.weightAffectsLayout;
+    elements.weightEdgeStyle.checked = state.semantics.weightAffectsEdgeStyle;
+    elements.weightLayout.disabled = !weighted;
+    elements.weightEdgeStyle.disabled = !weighted;
+    elements.weightLayout.closest(".toggle-row").classList.toggle("is-disabled", !weighted);
+    elements.weightEdgeStyle.closest(".toggle-row").classList.toggle("is-disabled", !weighted);
+    elements.semanticsNote.textContent = weighted
+      ? semanticsSummary()
+      : "Weights remain in the source data but neither layout nor edge appearance consumes them.";
+  }
+
+  function semanticsSummary() {
+    const layout = state.semantics.weightAffectsLayout;
+    const appearance = state.semantics.weightAffectsEdgeStyle;
+    if (layout && appearance) return "Weights shape the layout and the appearance of links.";
+    if (layout) return "Weights shape the layout; links use a uniform visual treatment.";
+    if (appearance) return "Layout uses uniform springs; link appearance still represents weight.";
+    return "Weights are available but currently do not affect layout or appearance.";
+  }
+
+  function updateWeightLayout() {
+    state.worker.postMessage({
+      type: "semantics",
+      revision: state.workerRevision,
+      weightAffectsLayout: weightChannelEnabled(state.semantics, "weightAffectsLayout")
+    });
+    setWorkerStatus("active");
+  }
+
+  function loadSemantics() {
+    try {
+      const stored = window.localStorage.getItem(SEMANTICS_STORAGE_KEY);
+      return normalizeGraphSemantics(stored ? JSON.parse(stored) : DEFAULT_GRAPH_SEMANTICS);
+    } catch {
+      return { ...DEFAULT_GRAPH_SEMANTICS };
+    }
+  }
+
+  function saveSemantics() {
+    try {
+      window.localStorage.setItem(SEMANTICS_STORAGE_KEY, JSON.stringify(state.semantics));
+    } catch {
+      return;
+    }
   }
 
   function updateForces() {
@@ -820,6 +920,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
       nodes,
       links: state.visibleLinks,
       forces: state.forces,
+      weightAffectsLayout: weightChannelEnabled(state.semantics, "weightAffectsLayout"),
       sharedBuffer,
       controlBuffer
     });
@@ -859,8 +960,8 @@ import { createGraphRenderer } from "./graph-renderer.js";
     } else if (data.type === "stats") {
       elements.workerStatus.title = `Barnes–Hut ${safeNumber(data.tickMs).toFixed(2)}ms · tree ${safeNumber(data.treeMs).toFixed(2)}ms · ${safeNumber(data.exactChecks).toLocaleString()} exact checks · ${safeNumber(data.overlapCount).toLocaleString()} overlaps · ${safeNumber(data.blockedOverlapCount).toLocaleString()} blocked overlaps · max ${safeNumber(data.maxOverlap).toFixed(2)}px · ${safeNumber(data.collisionIterations).toLocaleString()} collision passes`;
     } else if (data.type === "ready") {
-      if (data.protocolVersion !== 5) {
-        handleLayoutUnavailable(`Unsupported graph worker protocol ${data.protocolVersion ?? "unknown"}; expected 5`);
+      if (data.protocolVersion !== 6) {
+        handleLayoutUnavailable(`Unsupported graph worker protocol ${data.protocolVersion ?? "unknown"}; expected 6`);
         return;
       }
       state.runtimeMode = data.shared ? "Shared" : "Transfer";
@@ -983,6 +1084,8 @@ import { createGraphRenderer } from "./graph-renderer.js";
   }
 
   function cleanup() {
+    if (state.disposed) return;
+    state.disposed = true;
     cancelAnimationFrame(state.monitorFrame);
     cancelAnimationFrame(state.animation.frame);
     state.resizeObserver?.disconnect();
@@ -992,13 +1095,14 @@ import { createGraphRenderer } from "./graph-renderer.js";
   }
 
   function scheduleRender() {
-    if (state.renderPending) return;
+    if (state.disposed || state.renderPending) return;
     state.renderPending = true;
     requestAnimationFrame(render);
   }
 
   function render() {
     state.renderPending = false;
+    if (state.disposed) return;
     if (state.renderer) {
       context.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
       context.clearRect(0, 0, state.width, state.height);
@@ -1049,20 +1153,22 @@ import { createGraphRenderer } from "./graph-renderer.js";
       const targetPoint = worldToScreen(targetNode.x, targetNode.y);
       if (!lineIntersectsViewport(sourcePoint, targetPoint, 40)) continue;
 
-      const connected = focusId && (link.source === focusId || link.target === focusId);
-      const faded = focusId && !connected;
-      let alpha = 0.12 + Math.max(0, link.weight - 0.75) * 0.26;
-      if (link.type !== "internal") alpha *= 0.75;
-      if (connected) alpha = 0.62;
-      if (faded) alpha = 0.018;
-      context.strokeStyle = colorWithAlpha(connected ? "#c0b5d8" : "#888682", alpha);
-      context.lineWidth = Math.max(0.35, state.linkThickness * (connected ? 1.15 : 0.62));
+      const connected = Boolean(focusId && (link.source === focusId || link.target === focusId));
+      const faded = Boolean(focusId && !connected);
+      const stroke = resolveLinkStroke(link, {
+        weightAffectsEdgeStyle: weightChannelEnabled(state.semantics, "weightAffectsEdgeStyle"),
+        connected,
+        faded,
+        thickness: state.linkThickness
+      });
+      context.strokeStyle = colorWithAlpha(`#${stroke.color.toString(16).padStart(6, "0")}`, stroke.alpha);
+      context.lineWidth = stroke.width;
       context.beginPath();
       context.moveTo(sourcePoint.x, sourcePoint.y);
       context.lineTo(targetPoint.x, targetPoint.y);
       context.stroke();
 
-      if (state.arrows && (connected || state.camera.scale > 1.35)) drawArrow(sourcePoint, targetPoint, targetNode, alpha);
+      if (state.arrows && (connected || state.camera.scale > 1.35)) drawArrow(sourcePoint, targetPoint, targetNode, stroke.arrowAlpha);
     }
     context.restore();
   }
@@ -1078,7 +1184,7 @@ import { createGraphRenderer } from "./graph-renderer.js";
     const tipX = targetPoint.x - ux * (nodeRadius + 2);
     const tipY = targetPoint.y - uy * (nodeRadius + 2);
     const size = 3.2;
-    context.fillStyle = colorWithAlpha("#aaa5b0", Math.min(0.7, alpha + 0.14));
+    context.fillStyle = colorWithAlpha("#aaa5b0", alpha);
     context.beginPath();
     context.moveTo(tipX, tipY);
     context.lineTo(tipX - ux * size - uy * size * 0.72, tipY - uy * size + ux * size * 0.72);

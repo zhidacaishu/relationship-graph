@@ -8,7 +8,7 @@
 
 | 子项目 | 默认数据 | 边的含义 | 开发命令 |
 | --- | --- | --- | --- |
-| `apps/weighted` | 300 个模拟文献节点、1,032 条相似度边 | 相似度影响弹簧距离、弹簧强度和边的基础视觉 | `npm run dev` 或 `npm run dev:weighted` |
+| `apps/weighted` | 300 个模拟文献节点、1,032 条相似度边 | 可独立控制相似度是否影响布局和边视觉 | `npm run dev` 或 `npm run dev:weighted` |
 | `apps/unweighted-obsidian` | 167 篇模拟 Vault 笔记及其标签、附件和未解析引用 | 每条关系使用相同的基础弹簧公式、距离和线条样式 | `npm run dev:unweighted` |
 
 两个版本都完全运行在浏览器中，不需要后端或数据库，也不会读取或修改真实 Obsidian Vault。
@@ -29,30 +29,40 @@
 
 ### 加权版本
 
-加权版本模拟文献相似度网络。每条边的 `similarity` 会影响目标距离、弹簧强度和基础强调程度，并提供按创建年份播放的时间演化动画。
+加权版本模拟文献相似度网络。每条边的 `similarity` 会保留为规范化权重，并可通过 **Graph semantics** 独立控制：
 
-### 无权重版本
+- Weighted / Unweighted 决定布局和视觉是否消费权重，但不会删除源数据中的权重；
+- **Weights affect layout** 控制权重是否改变弹簧距离和强度；
+- **Weights affect edge appearance** 控制权重是否映射到边宽和透明度；
+- 切换语义时保留相机、筛选、Local/Global、选择、固定节点、坐标和时间线状态；
+- 提供按创建年份播放的时间演化动画，语义设置会保存在浏览器 `localStorage` 中。
 
-无权重版本模拟 Obsidian Vault：
+### 无权重配置工作区
 
-- 所有可见关系在布局中使用同一目标距离和弹簧强度；
-- 所有普通关系使用同一基础颜色、透明度和粗细；
-- 边的视觉差异只来自悬停、选择、搜索或局部上下文；
-- 笔记半径由 degree 和节点类型决定，不使用边权；
-- 默认颜色组来自 Vault 顶层文件夹；
-- tag、attachment、unresolved 和 orphan 使用固定系统色与不同节点形状；
-- 标签、附件和未解析节点从笔记元数据推导，孤立笔记由基础 wiki 图中的 degree 0 自动识别。
+无权重版本模拟 Obsidian Vault，并将视觉实验整合为一个可组合的 Graph Studio：
 
-### 无权重视觉方案
+- 四个内建主题：Editorial Atlas、Luminous Map、Research Console 和 Obsidian Echo；
+- 五种节点材质：None、Mineral Glaze、Enamel Double-Line、Ink Bloom 和 Precision Metal；
+- 可配置节点颜色模式、固定色、大小模式与缩放；
+- 可配置边颜色、聚焦色、粗细、透明度和方向箭头；
+- 可配置标签密度、标签衰减、暗角与四个布局参数；
+- 内建方案只读，可保存用户副本、重置、删除，并通过 JSON 导入/导出；
+- A/B 槽支持保存当前方案和瞬时切换，纯视觉变化不会重建图或重新启动 Worker；
+- 当前配置、用户方案和 A/B 槽会保存在浏览器 `localStorage` 中。
 
-无权重版本还提供两组共享数据与交互逻辑的多页面视觉实验：
+图数据仍保持严格无权重语义：所有关系使用固定弹簧公式，笔记半径由 degree 和节点类型决定；tag、attachment、unresolved 和 orphan 从 Vault 元数据推导并使用独立形状或系统色。
 
-- `comparison.html`：比较 Editorial Atlas、Luminous Map、Research Console 和 Obsidian Echo 四套完整界面方向；
-- `node-materials.html`：在固定的 Obsidian Echo 界面中比较 Mineral Glaze、Enamel Double-Line、Ink Bloom 和 Precision Metal 四种节点材质；
-- 各方案通过 `theme-entry.js` 复用 `index.html` 的界面结构，并继续使用同一份图数据、渲染器和 Worker；
-- 节点材质通过 CSS token 控制色板、内外描边、光晕、高光、状态环和双层边线，PixiJS 与 Canvas 2D 回退保持对应效果。
+### 公平静态对比
 
-启动 `npm run dev:unweighted` 后，可直接访问 `/comparison.html` 或 `/node-materials.html` 进入选择页。
+启动 `npm run dev:unweighted` 后，可从 Studio 的 **Compare view** 或直接访问 `/comparison.html`：
+
+- 选择 2–4 个主题、用户方案或 A/B 方案；
+- 从 Studio 进入时复用当前可见节点、边、世界坐标、相机、参考视口和 DPR；
+- 直接打开时只使用一个临时 Worker 求解一次布局，settled 后立即终止；
+- 每张卡片只进行静态 Canvas 重绘，不创建独立 Worker，也不带 hover、selection、pin 或动画状态；
+- 因此所有卡片的差异只来自配置，而不是随机布局或视口差异。
+
+原有主题页、材质页和 `node-materials.html` 继续作为兼容入口，通过 `theme-entry.js` 映射到统一应用和配置模型。
 
 ## 技术栈
 
@@ -148,10 +158,13 @@ npm run preview:unweighted
 
 ### 控制面板
 
-1. **Filters**：过滤节点，切换 tags、attachments、existing files 和 orphans；Local 模式下可调整邻域深度。
-2. **Groups**：启用、停用或编辑颜色组，也可添加自定义查询组。
-3. **Display**：控制箭头、标签阈值、节点大小和边粗细；加权版本还提供时间动画。
-4. **Forces**：实时调节中心力、斥力、连边力和连边距离。
+两个版本均提供 **Filters**、**Groups**、**Display** 和布局力参数；无权重 Studio 另外提供：
+
+1. **Study**：选择内建或用户方案，保存副本、删除、重置、导入/导出 JSON，并管理 A/B 槽和公平对比入口。
+2. **Graph semantics**：显示当前数据能力；无权重数据不开放权重映射，加权版本可独立控制权重对布局和边视觉的影响。
+3. **Theme**：组合四个背景主题和五种节点材质。
+4. **Nodes / Edges**：配置颜色模式、固定色、节点大小、边粗细、透明度和箭头。
+5. **Display / Layout**：配置标签密度、标签衰减、暗角，以及中心力、斥力、连边力和连边距离。
 
 无权重版本中的 **Existing files only** 默认开启；关闭后才会显示由 `unresolved[]` 推导的未解析引用节点。
 
@@ -262,13 +275,17 @@ window.PRECOMPUTED_GRAPH_DATA = {
 │  │  ├─ index.html
 │  │  ├─ styles.css
 │  │  ├─ app.js
+│  │  ├─ graph-semantics.js
 │  │  ├─ graph-renderer.js
 │  │  ├─ graph-worker.js
 │  │  ├─ graph-quadtree.js
 │  │  └─ graph-data.js
 │  └─ unweighted-obsidian/
 │     ├─ index.html
+│     ├─ graph-config.js
 │     ├─ comparison.html
+│     ├─ comparison.css
+│     ├─ comparison.js
 │     ├─ node-materials.html
 │     ├─ editorial-atlas.html
 │     ├─ luminous-map.html
@@ -295,11 +312,13 @@ window.PRECOMPUTED_GRAPH_DATA = {
 ## 渲染与布局架构
 
 1. `graph-data.js` 在页面加载时写入预计算数据。
-2. 无权重视觉方案由 `theme-entry.js` 载入共享的 `index.html` 界面结构，再启动同一份图数据和应用代码。
-3. `app.js` 归一化节点，推导可选实体，并根据模式、查询和开关构建当前可见图。
-4. `graph-worker.js` 在独立线程中计算中心力、斥力、连边弹簧和碰撞约束。
-5. 支持跨源隔离时，主线程与 Worker 通过 `SharedArrayBuffer` 共享位置；否则通过可转移数组传递快照。
-6. `graph-renderer.js` 使用 PixiJS 绘制节点、边、箭头和标签；初始化失败时由 `app.js` 使用 Canvas 2D 回退渲染。
+2. `app.js` 归一化节点，推导可选实体，并根据模式、查询和开关构建当前可见图。
+3. 无权重 `graph-config.js` 负责版本化配置、capability normalization、视觉 token、Preset、A/B 和浏览器持久化；旧主题页由 `theme-entry.js` 映射到同一配置入口。
+4. 加权 `graph-semantics.js` 统一 Worker、PixiJS 与 Canvas 2D 对权重开关、权重分桶、边宽和透明度的解释。
+5. `graph-worker.js` 在独立线程中计算中心力、斥力、连边弹簧和碰撞约束；纯视觉配置不会发送布局消息。
+6. 支持跨源隔离时，主线程与 Worker 通过 `SharedArrayBuffer` 共享位置；否则通过可转移数组传递快照。
+7. `graph-renderer.js` 使用 PixiJS 绘制节点、边、箭头和标签；初始化失败时由 `app.js` 使用 Canvas 2D 回退渲染。
+8. `comparison.js` 从 Studio 接收一次性 `sessionStorage` 快照，或直接使用一个临时 Worker，随后以固定坐标和相机绘制静态比较卡片。
 
 开发和预览服务器已设置：
 
@@ -315,6 +334,7 @@ Cross-Origin-Embedder-Policy: require-corp
 - 这是界面与图谱交互原型，不是 Obsidian 插件；
 - 数据为确定性的模拟数据，不连接真实文件系统；
 - “打开笔记”只提供界面反馈，复制链接受浏览器剪贴板权限限制；
-- 配置、节点位置和固定状态不会持久化；
+- 无权重当前配置、用户方案和 A/B 槽，以及加权语义设置会持久化在当前浏览器；节点位置、固定节点、相机、筛选和选择状态不会跨刷新持久化；
+- 公平对比的 live graph 快照只在当前标签页的 `sessionStorage` 中保存一次，进入 comparison 后立即删除；
 - 当前没有自动化测试脚本、后端服务或数据库；
 - 仓库未提供许可证文件，在明确授权前请勿默认代码可自由再分发。

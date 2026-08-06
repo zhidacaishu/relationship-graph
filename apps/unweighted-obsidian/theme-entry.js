@@ -1,8 +1,20 @@
+const entryPreset = document.body.dataset.theme;
+const entryMaterial = document.body.dataset.material;
 const response = await fetch("./index.html");
 if (!response.ok) throw new Error(`Unable to load graph shell: ${response.status}`);
 
 const source = new DOMParser().parseFromString(await response.text(), "text/html");
 source.querySelectorAll("script").forEach((script) => script.remove());
+source.querySelectorAll('link[rel="stylesheet"]').forEach((stylesheet) => {
+  const href = new URL(stylesheet.getAttribute("href"), response.url).href;
+  if (document.querySelector(`link[rel="stylesheet"][href="${href}"]`)) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = href;
+  document.head.append(link);
+});
+document.body.dataset.entryPreset = entryPreset;
+if (entryMaterial) document.body.dataset.entryMaterial = entryMaterial;
 document.body.insertAdjacentHTML("beforeend", source.body.innerHTML);
 
 const themeNames = {

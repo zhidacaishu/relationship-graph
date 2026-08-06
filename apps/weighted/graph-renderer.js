@@ -1,4 +1,5 @@
 import { Application, BitmapText, Container, Graphics } from "pixi.js";
+import { resolveLinkStroke, weightChannelEnabled } from "./graph-semantics.js";
 
 const LABEL_OFFSETS = [
   [1, 0],
@@ -100,9 +101,9 @@ class GraphRenderer {
     const arrows = this.arrowsGraphics.clear();
     const focusId = state.hoveredId;
     const nodeById = state.visibleById;
-    let hasNormal = false;
-    let hasEmphasis = false;
-    let hasArrows = false;
+    const weightAffectsEdgeStyle = weightChannelEnabled(state.semantics, "weightAffectsEdgeStyle");
+    const strokes = new Map();
+    const arrowStyles = new Map();
 
     for (const link of state.visibleLinks) {
       const source = nodeById.get(link.source);
@@ -112,36 +113,44 @@ class GraphRenderer {
       const targetProgress = revealProgress(target, state);
       const progress = Math.min(sourceProgress, targetProgress);
       if (progress <= 0) continue;
-      const connected = focusId && (link.source === focusId || link.target === focusId);
-      const graphics = connected ? emphasis : normal;
-      graphics.moveTo(source.x, source.y).lineTo(target.x, target.y);
-      if (connected) hasEmphasis = true;
-      else hasNormal = true;
+      const connected = Boolean(focusId && (link.source === focusId || link.target === focusId));
+      const stroke = resolveLinkStroke(link, {
+        weightAffectsEdgeStyle,
+        connected,
+        faded: Boolean(focusId && !connected),
+        thickness: state.linkThickness
+      });
+      const key = `${connected ? "focus" : "normal"}:${stroke.key}`;
+      if (!strokes.has(key)) strokes.set(key, { ...stroke, connected, segments: [] });
+      strokes.get(key).segments.push({ source, target });
 
       if (state.arrows && (connected || state.camera.scale > 1.35)) {
-        drawArrow(arrows, source, target, target.radius * state.nodeScale, state.camera.scale);
-        hasArrows = true;
+        const arrowKey = stroke.arrowAlpha.toFixed(4);
+        if (!arrowStyles.has(arrowKey)) arrowStyles.set(arrowKey, { alpha: stroke.arrowAlpha, segments: [] });
+        arrowStyles.get(arrowKey).segments.push({ source, target });
       }
     }
 
     const inverseScale = 1 / Math.max(0.18, state.camera.scale);
-    if (hasNormal) {
-      normal.stroke({
-        color: 0x85827f,
-        alpha: focusId ? 0.018 : 0.13,
-        width: Math.max(0.36, state.linkThickness * 0.62) * inverseScale,
+    for (const stroke of strokes.values()) {
+      const graphics = stroke.connected ? emphasis : normal;
+      for (const { source, target } of stroke.segments) {
+        graphics.moveTo(source.x, source.y).lineTo(target.x, target.y);
+      }
+      graphics.stroke({
+        color: stroke.color,
+        alpha: stroke.alpha,
+        width: stroke.width * inverseScale,
         cap: "round"
       });
     }
-    if (hasEmphasis) {
-      emphasis.stroke({
-        color: 0xbeb4d5,
-        alpha: 0.66,
-        width: state.linkThickness * 1.15 * inverseScale,
-        cap: "round"
-      });
+
+    for (const style of arrowStyles.values()) {
+      for (const { source, target } of style.segments) {
+        drawArrow(arrows, source, target, target.radius * state.nodeScale, state.camera.scale);
+      }
+      arrows.fill({ color: 0xaaa5b0, alpha: style.alpha });
     }
-    if (hasArrows) arrows.fill({ color: 0xaaa5b0, alpha: focusId ? 0.72 : 0.32 });
   }
 
   drawNodes(state) {

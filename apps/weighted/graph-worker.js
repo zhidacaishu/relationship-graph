@@ -1,6 +1,7 @@
 import { applyBarnesHut, buildQuadtree, queryRange } from "./graph-quadtree.js";
+import { normalizeLinkWeight } from "./graph-semantics.js";
 
-const PROTOCOL_VERSION = 5;
+const PROTOCOL_VERSION = 6;
 const CONTROL_SEQUENCE = 0;
 const CONTROL_FRAME = 1;
 const CONTROL_STATUS = 2;
@@ -31,6 +32,7 @@ let frame = 0;
 let sharedPositions = null;
 let sharedControl = null;
 let lastStatus = "idle";
+let weightAffectsLayout = true;
 let forces = {
   centerStrength: 0.4,
   repelStrength: 8,
@@ -46,6 +48,9 @@ self.onmessage = ({ data }) => {
     case "forces":
       forces = { ...forces, ...data.forces };
       reheat(0.68);
+      break;
+    case "semantics":
+      updateSemantics(data);
       break;
     case "radii":
       updateRadii(data);
@@ -74,6 +79,7 @@ self.onmessage = ({ data }) => {
 function initialize(data) {
   revision = data.revision;
   forces = { ...forces, ...data.forces };
+  weightAffectsLayout = data.weightAffectsLayout !== false;
   ids = data.nodes.map((node) => node.id);
   idToIndex = new Map(ids.map((id, index) => [id, index]));
   const count = ids.length;
@@ -98,7 +104,7 @@ function initialize(data) {
     .map((link) => ({
       source: idToIndex.get(link.source),
       target: idToIndex.get(link.target),
-      weight: link.weight ?? 1
+      weight: normalizeLinkWeight(link.weight)
     }))
     .filter((link) => link.source !== undefined && link.target !== undefined && link.source !== link.target);
 
@@ -152,6 +158,14 @@ function isFixed(index) {
 
 function isImmovable(index) {
   return isFixed(index) || index === draggedIndex;
+}
+
+function updateSemantics(data) {
+  if (data.revision !== revision) return;
+  const next = Boolean(data.weightAffectsLayout);
+  if (next === weightAffectsLayout) return;
+  weightAffectsLayout = next;
+  reheat(0.68);
 }
 
 function updateRadii(data) {
@@ -360,8 +374,9 @@ function applyLinkSprings() {
     const dx = x[target] - x[source];
     const dy = y[target] - y[source];
     const distance = Math.max(0.1, Math.sqrt(dx * dx + dy * dy));
-    const weightedDistance = desiredDistance * (1.12 - Math.min(1, link.weight) * 0.2);
-    const spring = (distance - weightedDistance) / distance * springScale * (0.55 + link.weight * 0.65);
+    const spring = weightAffectsLayout
+      ? (distance - desiredDistance * (1.12 - link.weight * 0.2)) / distance * springScale * (0.55 + link.weight * 0.65)
+      : (distance - desiredDistance) / distance * springScale;
     const forceX = dx * spring;
     const forceY = dy * spring;
     if (!isImmovable(source)) {
